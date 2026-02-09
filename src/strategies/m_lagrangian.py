@@ -1,60 +1,98 @@
 
 import gurobipy as gp
 from typing import List, Dict, Tuple, Any
+from itertools import combinations
 from .base_strategy import SeparationStrategy
 
 class MLagrangianStrategy(SeparationStrategy):
-    def __init__(self, max_cuts=50, tol=1e-4):
+    def __init__(self, mindeg=2, maxdeg=2, factor=1.0, max_cuts=50, tol=1e-4):
+        self.mindeg = mindeg
+        self.maxdeg = maxdeg
+        self.factor = factor
+        # Compatibility args (unused in logic but kept for main.py signature)
         self.max_cuts = max_cuts
         self.tol = tol
 
     def get_w_signature(self, x_values: List[int]) -> Tuple:
         return tuple(x_values)
 
-    def separate(self, w_sol_u: Dict[Tuple, float], w_sol_v: Dict[Tuple, float]) -> List[Tuple[int, int]]:
+    def separate(self, w_sol_u: Dict[Tuple, float], w_sol_v: Dict[Tuple, float]) -> List[Tuple[Tuple[int, ...], int]]:
         if not w_sol_u and not w_sol_v: return []
-        moments_u, moments_v = {}, {}
 
-        def compute_moments(w_sol, moments_dict):
-            for x_tuple, weight in w_sol.items():
-                if weight < 1e-6: continue
-                ones = [i for i, val in enumerate(x_tuple) if val > 0.5]
-                for i in range(len(ones)):
-                    for j in range(i + 1, len(ones)):
-                        p, q = ones[i], ones[j]
-                        key = (p, q)
-                        moments_dict[key] = moments_dict.get(key, 0.0) + weight
-
-        compute_moments(w_sol_u, moments_u)
-        compute_moments(w_sol_v, moments_v)
-
+        first_sig = next(iter(w_sol_u)) if w_sol_u else next(iter(w_sol_v))
+        n_vars = len(first_sig)
         violations = []
-        all_pairs = set(moments_u.keys()) | set(moments_v.keys())
-        for p, q in all_pairs:
-            val_u = moments_u.get((p, q), 0.0)
-            val_v = moments_v.get((p, q), 0.0)
-            diff = abs(val_u - val_v)
-            if diff > self.tol:
-                violations.append(((p, q), diff))
+
+        for deg in range(self.mindeg, self.maxdeg + 1):
+            relevant_subsets = set()
+            def collect_subsets(w_sol):
+                for sig, weight in w_sol.items():
+                    if weight < 1e-6: continue
+                    ones_indices = [i for i, val in enumerate(sig) if val > 0.5]
+                    if len(ones_indices) >= deg:
+                        for subset in combinations(ones_indices, deg):
+                            relevant_subsets.add(subset)
+            collect_subsets(w_sol_u)
+            collect_subsets(w_sol_v)
+
+            for subset in relevant_subsets:
+                eu = 0.0
+                for sig, weight in w_sol_u.items():
+                    if all(sig[i] > 0.5 for i in subset): eu += weight
+                ev = 0.0
+                for sig, weight in w_sol_v.items():
+                    if all(sig[i] > 0.5 for i in subset): ev += weight
+
+                diff = abs(eu - ev)
+                if diff > self.tol:
+                    violations.append((subset, diff))
 
         violations.sort(key=lambda x: x[1], reverse=True)
-        return [v[0] for v in violations[:self.max_cuts]]
+        limit = int(self.factor * n_vars) if self.factor > 0 else self.max_cuts
+        # Fallback to max_cuts if factor logic results in 0 or just to be safe
+        limit = max(limit, self.max_cuts)
+        return [v[0] for v in violations[:limit]]
 
     def apply_pricing_penalty(self, model: gp.Model, vars_list: List[gp.Var],
-                              cuts: List[Any], duals: Dict) -> gp.QuadExpr:
-        penalty_expr = gp.QuadExpr()
-        for cut_id, signature, sign_factor in cuts:
+                              cuts: List[Any], duals: Dict) -> gp.LinExpr:
+        penalty_expr = gp.LinExpr()
+
+        for cut_id, indices_s, sign_factor in cuts:
             if cut_id not in duals: continue
-            p, q = signature
             mu = duals[cut_id]
             coeff = sign_factor * mu
             if abs(coeff) < 1e-9: continue
-            if p < len(vars_list) and q < len(vars_list):
-                penalty_expr.add(vars_list[p] * vars_list[q], coeff)
+
+            w_name = f"w_cut_{cut_id}"
+            w_var = model.getVarByName(w_name)
+
+            if w_var is None:
+                w_var = model.addVar(vtype=gp.GRB.BINARY, name=w_name)
+
+                # McCormick Linearization: w = PROD_{k in S} x_k
+                # 1. w <= x_k
+                for k in indices_s:
+                    if k < len(vars_list):
+                        model.addConstr(w_var <= vars_list[k], name=f"mc_le_{w_name}_{k}")
+
+                # 2. w >= SUM(x_k) - (|S| - 1)
+                s_size = len(indices_s)
+                sum_expr = gp.LinExpr()
+                valid_indices_count = 0
+                for k in indices_s:
+                    if k < len(vars_list):
+                        sum_expr.add(vars_list[k])
+                        valid_indices_count += 1
+
+                if valid_indices_count == s_size:
+                    model.addConstr(w_var >= sum_expr - (s_size - 1), name=f"mc_ge_{w_name}")
+
+            penalty_expr.add(w_var, coeff)
+
         return penalty_expr
 
     def evaluate_cut(self, column_signature: Tuple, cut_signature: Any) -> float:
-        p, q = cut_signature
-        if p < len(column_signature) and q < len(column_signature):
-            return float(column_signature[p] * column_signature[q])
-        return 0.0
+        for idx in cut_signature:
+            if idx >= len(column_signature) or column_signature[idx] < 0.5:
+                return 0.0
+        return 1.0

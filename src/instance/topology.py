@@ -40,35 +40,21 @@ class TopologyManager:
             self.add_coupling(i, i+1, indices_u, indices_v)
 
     def create_bintree(self, n_nodes: int, coupling_size: int):
-            """
-            Crea un árbol binario completo estilo Programación Estocástica.
-            El padre comparte las MISMAS variables de acoplamiento con ambos hijos
-            (representando el estado pasado a distintos escenarios futuros).
+        if n_nodes < coupling_size:
+             raise ValueError(f"n_nodes ({n_nodes}) debe ser al menos coupling ({coupling_size})")
 
-            - Input (desde abuelo): Variables [0, C)
-            - Output (hacia ambos hijos): Variables [N-C, N)
-            """
-            if n_nodes < coupling_size:
-                raise ValueError(f"n_nodes ({n_nodes}) debe ser al menos coupling ({coupling_size})")
+        for i in range(self.num_blocks):
+            left = 2 * i + 1
+            right = 2 * i + 2
 
-            for i in range(self.num_blocks):
-                left = 2 * i + 1
-                right = 2 * i + 2
+            # Logic: Stochastic Multistage Style
+            # Parent outputs same state to both children (Non-anticipativity implicit)
+            # Input: [0, C), Output: [N-C, N)
+            indices_u = list(range(n_nodes - coupling_size, n_nodes)) # Output vars
+            indices_v = list(range(coupling_size)) # Input vars
 
-                # Definimos el puerto de SALIDA del padre.
-                # Al ser estocástico, es el MISMO puerto para ambos hijos (non-anticipativity implícito).
-                # Usamos las últimas variables del bloque.
-                indices_u = list(range(n_nodes - coupling_size, n_nodes))
+            if left < self.num_blocks:
+                self.add_coupling(i, left, indices_u, indices_v)
 
-                # Definimos el puerto de ENTRADA de los hijos.
-                # Reciben el estado en sus primeras variables.
-                indices_v = list(range(coupling_size))
-
-                # Conexión con Hijo Izquierdo
-                if left < self.num_blocks:
-                    self.add_coupling(i, left, indices_u, indices_v)
-
-                # Conexión con Hijo Derecho
-                if right < self.num_blocks:
-                    # Reutilizamos indices_u: El padre impone las mismas restricciones al hijo derecho
-                    self.add_coupling(i, right, indices_u, indices_v)
+            if right < self.num_blocks:
+                self.add_coupling(i, right, indices_u, indices_v)

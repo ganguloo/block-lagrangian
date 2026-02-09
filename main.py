@@ -16,25 +16,24 @@ from src.monolithic.solver import MonolithicSolver
 OUTPUT_FILE = "benchmark_results.csv"
 
 INSTANCE_GRID = [
-    {"n_blocks": 15, "n_nodes": 100, "coupling": 20, "topo": "star"},
     {"n_blocks": 15, "n_nodes": 100, "coupling": 20, "topo": "path"},
-    {"n_blocks": 15, "n_nodes": 100, "coupling": 20, "topo": "bintree"},
-    {"n_blocks": 15, "n_nodes": 100, "coupling": 30, "topo": "star"},
     {"n_blocks": 15, "n_nodes": 100, "coupling": 30, "topo": "path"},
-    {"n_blocks": 15, "n_nodes": 100, "coupling": 30, "topo": "bintree"},
-    {"n_blocks": 15, "n_nodes": 100, "coupling": 40, "topo": "star"},
     {"n_blocks": 15, "n_nodes": 100, "coupling": 40, "topo": "path"},
+    {"n_blocks": 15, "n_nodes": 100, "coupling": 20, "topo": "bintree"},
+    {"n_blocks": 15, "n_nodes": 100, "coupling": 30, "topo": "bintree"},
     {"n_blocks": 15, "n_nodes": 100, "coupling": 40, "topo": "bintree"},
+    {"n_blocks": 15, "n_nodes": 100, "coupling": 20, "topo": "star"},
+    {"n_blocks": 15, "n_nodes": 100, "coupling": 30, "topo": "star"},
+    {"n_blocks": 15, "n_nodes": 100, "coupling": 40, "topo": "star"},
 ]
 
-SEEDS = [s for s in range(10)]
+SEEDS = [s for s in range(5)]
 
 SOLVER_CONFIGS = [
-    {"name": "Monolithic", "type": "mono", "time_limit": 600},
-    {"name": "CRG_VLag", "type": "crg", "class": VLagrangianStrategy, "args": {}, "time_limit": 600},
-    {"name": "CRG_MLag_Cuts20", "type": "crg", "class": MLagrangianStrategy, "args": {"max_cuts": 20, "tol": 1e-4}, "time_limit": 600},
-    {"name": "CRG_MLag_Cuts30", "type": "crg", "class": MLagrangianStrategy, "args": {"max_cuts": 30, "tol": 1e-4}, "time_limit": 600},
-    {"name": "CRG_MLag_Cuts40", "type": "crg", "class": MLagrangianStrategy, "args": {"max_cuts": 40, "tol": 1e-4}, "time_limit": 600},
+    {"name": "Monolithic", "type": "mono", "time_limit": 900},
+    {"name": "CRG_VLag", "type": "crg", "class": VLagrangianStrategy, "args": {}, "time_limit": 900},
+    {"name": "CRG_MLag_maxdeg2", "type": "crg", "class": MLagrangianStrategy, "args": {"maxdeg": 2}, "time_limit": 900},
+    {"name": "CRG_MLag_maxdeg3", "type": "crg", "class": MLagrangianStrategy, "args": {"maxdeg": 3}, "time_limit": 900},
 ]
 # ========================================================
 

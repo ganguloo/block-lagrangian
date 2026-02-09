@@ -26,21 +26,32 @@ class VLagrangianStrategy(SeparationStrategy):
             coeff = sign_factor * mu
             if abs(coeff) < 1e-9: continue
 
-            sig_str = "".join(map(str, signature))
-            w_name = f"w_v_{sig_str}"
+            # FIX V32: Use cut_id in variable name to ensure uniqueness per interface/cut
+            # Avoids collision when multiple neighbors have same signature
+            w_name = f"w_v_{cut_id}"
             w_var = model.getVarByName(w_name)
+
             if w_var is None:
                 w_var = model.addVar(vtype=gp.GRB.BINARY, name=w_name)
+
+                # Add indicator constraints: w=1 <=> x matches signature
+                # This formulation enforces w=0 if mismatch.
                 delta_expr = gp.LinExpr()
                 n = len(signature)
                 for i, bit in enumerate(signature):
                     if bit == 1:
+                        # If bit is 1, we want (1 - x_i) to be 0
                         delta_expr.addConstant(1.0)
                         delta_expr.add(vars_list[i], -1.0)
                     else:
+                        # If bit is 0, we want x_i to be 0
                         delta_expr.add(vars_list[i], 1.0)
+
+                # If delta_expr > 0 (mismatch), then n*(1-w) must be >= delta, so (1-w) > 0 => w=0.
                 model.addConstr(delta_expr <= n * (1 - w_var), name=f"H_le_{w_name}")
+
                 model.addConstr(delta_expr >= 1 - w_var, name=f"H_ge_{w_name}")
+
             penalty_expr.add(w_var, coeff)
         return penalty_expr
 

@@ -20,6 +20,7 @@ class CRGManager:
         self.cut_registry = {}
         self.active_cuts_by_edge = {}
         self.executor = concurrent.futures.ThreadPoolExecutor(max_workers=16)
+        self.initial_dual_bound = float('inf')
 
     def _propagate_conflicts(self):
         print("Pre-procesamiento: Propagando conflictos Stable Set...")
@@ -37,11 +38,11 @@ class CRGManager:
         return p_idx, self.pricers[p_idx].solve(alpha_i, pi, mu, cuts)
 
     def _initialize_from_monolithic(self):
-        print("Inicializando con Monolítico (5s)...")
+        print("Inicializando con Monolítico (10w)...")
         mono = MonolithicSolver(self.topology, self.blocks)
         mono.model.Params.OutputFlag = 0
         try:
-            mono.build_and_solve(time_limit=5)
+            mono.build_and_solve(work_limit=10)
         except: pass
 
         if mono.model.SolCount > 0:
@@ -67,6 +68,21 @@ class CRGManager:
         else:
             print("[Init] No se encontró solución.")
             self.primal_bound = -1e9
+
+        # FIX V34: Initialize Dual Bound with Monolithic Linear Relaxation
+        print("[Init] Resolviendo relajación lineal monolítica para cota dual inicial...")
+        try:
+            m_copy = mono.model.copy()
+            m_relax = m_copy.relax()
+            m_relax.Params.OutputFlag = 0
+            m_relax.optimize()
+            if m_relax.Status == gp.GRB.OPTIMAL:
+                self.initial_dual_bound = m_relax.ObjVal
+                print(f"[Init] Cota Dual Inicial (LR): {self.initial_dual_bound}")
+            else:
+                self.initial_dual_bound = float('inf')
+        except:
+            self.initial_dual_bound = float('inf')
 
     def _check_integrality(self) -> bool:
         for b_id, cols in self.master.lambda_vars.items():
@@ -109,7 +125,9 @@ class CRGManager:
         self._propagate_conflicts()
         for p in self.pricers: p.rebuild_model()
         self._initialize_from_monolithic()
+
         metrics["primal_bound"] = self.primal_bound
+        metrics["dual_bound"] = self.initial_dual_bound # Use LR init
 
         while True:
             metrics["iter_outer"] += 1
@@ -134,14 +152,17 @@ class CRGManager:
                     stop_outer = True
                     break
 
-                metrics["dual_bound"] = self.master.model.ObjVal
+                # Note: DO NOT update dual_bound here.
+                # Only strictly valid as "tightest" bound when pricing finishes.
+                # However, for checking integrality/primal, we use current obj.
+                current_obj = self.master.model.ObjVal
 
                 # Check Integrality
                 is_int = self._check_integrality()
                 star = "*" if is_int else ""
                 if is_int:
-                    if self.master.model.ObjVal > metrics["primal_bound"]:
-                        metrics["primal_bound"] = self.master.model.ObjVal
+                    if current_obj > metrics["primal_bound"]:
+                        metrics["primal_bound"] = current_obj
 
                 # Check Time Limit inside inner loop
                 if time_limit and (time.time() - start_total) > time_limit:
@@ -170,11 +191,14 @@ class CRGManager:
                 metrics["cols_added"] += cols_added_iter
                 inner_cols += cols_added_iter
 
-                print(f"  Iter {metrics['iter_total_inner']}: Obj {metrics['dual_bound']:.4f} {star}, Time {(time.time()-start_total):.1f}s, Cols +{cols_added_iter}")
+                print(f"  Iter {metrics['iter_total_inner']}: Obj {current_obj:.4f} {star}, Time {(time.time()-start_total):.1f}s, Cols +{cols_added_iter}")
 
-                if cols_added_iter == 0: break
+                if cols_added_iter == 0:
+                    # Inner Loop Converged: Update Dual Bound safely
+                    metrics["dual_bound"] = current_obj
+                    break
 
-            # Capture Root LP (End of first CG phase)
+            # Capture Root LP (First outer iter, first successful CG convergence)
             if metrics["iter_outer"] == 1 and metrics["root_lp_val"] is None:
                 metrics["root_lp_val"] = metrics["dual_bound"]
 
@@ -232,8 +256,7 @@ class CRGManager:
                 t0 = time.time()
                 self.master.solve()
                 metrics["time_master"] += time.time() - t0
-                if self.master.model.Status == gp.GRB.OPTIMAL:
-                    metrics["dual_bound"] = self.master.model.ObjVal
+                # Note: DO NOT update dual_bound here either, wait for next CG convergence
 
             # Run MIP Heuristic at end of Outer Loop
             self._run_mip_heuristic(metrics)
@@ -244,7 +267,7 @@ class CRGManager:
                 metrics["status"] = "Converged"
                 break
 
-        # FIX V29: Final MIP Heuristic
+        # Final MIP Heuristic
         print(">>> Solving Final MIP (Heuristic)...")
         self.master.switch_to_binary()
         self.master.solve()

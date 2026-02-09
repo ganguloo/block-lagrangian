@@ -12,7 +12,7 @@ class MonolithicSolver:
         self.model = gp.Model("MonolithicProblem")
         self.model.Params.OutputFlag = 1
 
-    def build_and_solve(self, time_limit=None) -> Dict[str, Any]:
+    def build_and_solve(self, time_limit=None, work_limit=None) -> Dict[str, Any]:
         total_obj = gp.LinExpr()
         for block in self.blocks:
             block.build_model(parent_model=self.model)
@@ -62,6 +62,9 @@ class MonolithicSolver:
 
         if time_limit:
             self.model.Params.TimeLimit = time_limit
+
+        if work_limit:
+            self.model.Params.WorkLimit = work_limit
 
         start_t = time.time()
         self.model.optimize()
