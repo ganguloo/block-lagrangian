@@ -1,4 +1,3 @@
-
 from abc import ABC, abstractmethod
 from typing import List, Dict, Any, Tuple
 import gurobipy as gp

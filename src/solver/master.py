@@ -1,4 +1,3 @@
-
 import gurobipy as gp
 from typing import Dict, Tuple, Any, Set
 

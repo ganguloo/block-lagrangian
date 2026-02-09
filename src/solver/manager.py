@@ -1,4 +1,3 @@
-
 import time
 import gurobipy as gp
 import concurrent.futures
@@ -69,7 +68,6 @@ class CRGManager:
             print("[Init] No se encontró solución.")
             self.primal_bound = -1e9
 
-        # FIX V34: Initialize Dual Bound with Monolithic Linear Relaxation
         print("[Init] Resolviendo relajación lineal monolítica para cota dual inicial...")
         try:
             m_copy = mono.model.copy()
@@ -122,12 +120,12 @@ class CRGManager:
         }
 
         start_total = time.time()
-        self._propagate_conflicts()
+        if all(hasattr(i, 'inherit_conflicts') for i in self.blocks): self._propagate_conflicts()
         for p in self.pricers: p.rebuild_model()
         self._initialize_from_monolithic()
 
         metrics["primal_bound"] = self.primal_bound
-        metrics["dual_bound"] = self.initial_dual_bound # Use LR init
+        metrics["dual_bound"] = self.initial_dual_bound
 
         while True:
             metrics["iter_outer"] += 1
@@ -137,7 +135,6 @@ class CRGManager:
                 metrics["status"] = "TimeLimit"
                 break
 
-            # CG Loop
             inner_cols = 0
             stop_outer = False
 
@@ -152,26 +149,20 @@ class CRGManager:
                     stop_outer = True
                     break
 
-                # Note: DO NOT update dual_bound here.
-                # Only strictly valid as "tightest" bound when pricing finishes.
-                # However, for checking integrality/primal, we use current obj.
                 current_obj = self.master.model.ObjVal
 
-                # Check Integrality
                 is_int = self._check_integrality()
                 star = "*" if is_int else ""
                 if is_int:
                     if current_obj > metrics["primal_bound"]:
                         metrics["primal_bound"] = current_obj
 
-                # Check Time Limit inside inner loop
                 if time_limit and (time.time() - start_total) > time_limit:
                     metrics["status"] = "TimeLimit"
                     stop_outer = True
                     break
 
                 alpha, pi, mu = self.master.get_duals()
-
                 cols_added_iter = 0
                 max_rc = 0.0
 
@@ -194,15 +185,12 @@ class CRGManager:
                 print(f"  Iter {metrics['iter_total_inner']}: Obj {current_obj:.4f} {star}, Time {(time.time()-start_total):.1f}s, Cols +{cols_added_iter}")
 
                 if cols_added_iter == 0:
-                    # Inner Loop Converged: Update Dual Bound safely
                     metrics["dual_bound"] = current_obj
                     break
 
-            # Capture Root LP (First outer iter, first successful CG convergence)
             if metrics["iter_outer"] == 1 and metrics["root_lp_val"] is None:
                 metrics["root_lp_val"] = metrics["dual_bound"]
 
-            # Early Stop by Gap
             if metrics["dual_bound"] > 0 and metrics["primal_bound"] > -1e8:
                 current_gap = abs(metrics["dual_bound"] - metrics["primal_bound"]) / abs(metrics["dual_bound"])
                 if current_gap < 1e-4:
@@ -213,7 +201,6 @@ class CRGManager:
                 print(f"Fin Outer {metrics['iter_outer']} (Interrupted): Obj {metrics['dual_bound']:.4f}, Status: {metrics['status']}")
                 break
 
-            # RG
             cuts_added_iter = 0
             w_sol = {}
             for b_id, cols in self.master.lambda_vars.items():
@@ -256,9 +243,7 @@ class CRGManager:
                 t0 = time.time()
                 self.master.solve()
                 metrics["time_master"] += time.time() - t0
-                # Note: DO NOT update dual_bound here either, wait for next CG convergence
 
-            # Run MIP Heuristic at end of Outer Loop
             self._run_mip_heuristic(metrics)
 
             print(f"Fin Outer {metrics['iter_outer']}: Obj {metrics['dual_bound']:.4f}, Cuts +{cuts_added_iter}")
@@ -267,7 +252,6 @@ class CRGManager:
                 metrics["status"] = "Converged"
                 break
 
-        # Final MIP Heuristic
         print(">>> Solving Final MIP (Heuristic)...")
         self.master.switch_to_binary()
         self.master.solve()

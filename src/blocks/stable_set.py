@@ -1,4 +1,3 @@
-
 import gurobipy as gp
 import numpy as np
 from typing import List, Tuple, Dict, Set

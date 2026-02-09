@@ -1,4 +1,3 @@
-
 import gurobipy as gp
 from typing import List, Dict, Tuple, Any
 from itertools import combinations
@@ -9,7 +8,6 @@ class MLagrangianStrategy(SeparationStrategy):
         self.mindeg = mindeg
         self.maxdeg = maxdeg
         self.factor = factor
-        # Compatibility args (unused in logic but kept for main.py signature)
         self.max_cuts = max_cuts
         self.tol = tol
 
@@ -18,7 +16,6 @@ class MLagrangianStrategy(SeparationStrategy):
 
     def separate(self, w_sol_u: Dict[Tuple, float], w_sol_v: Dict[Tuple, float]) -> List[Tuple[Tuple[int, ...], int]]:
         if not w_sol_u and not w_sol_v: return []
-
         first_sig = next(iter(w_sol_u)) if w_sol_u else next(iter(w_sol_v))
         n_vars = len(first_sig)
         violations = []
@@ -49,14 +46,12 @@ class MLagrangianStrategy(SeparationStrategy):
 
         violations.sort(key=lambda x: x[1], reverse=True)
         limit = int(self.factor * n_vars) if self.factor > 0 else self.max_cuts
-        # Fallback to max_cuts if factor logic results in 0 or just to be safe
         limit = max(limit, self.max_cuts)
         return [v[0] for v in violations[:limit]]
 
     def apply_pricing_penalty(self, model: gp.Model, vars_list: List[gp.Var],
                               cuts: List[Any], duals: Dict) -> gp.LinExpr:
         penalty_expr = gp.LinExpr()
-
         for cut_id, indices_s, sign_factor in cuts:
             if cut_id not in duals: continue
             mu = duals[cut_id]
@@ -68,14 +63,9 @@ class MLagrangianStrategy(SeparationStrategy):
 
             if w_var is None:
                 w_var = model.addVar(vtype=gp.GRB.BINARY, name=w_name)
-
-                # McCormick Linearization: w = PROD_{k in S} x_k
-                # 1. w <= x_k
                 for k in indices_s:
                     if k < len(vars_list):
                         model.addConstr(w_var <= vars_list[k], name=f"mc_le_{w_name}_{k}")
-
-                # 2. w >= SUM(x_k) - (|S| - 1)
                 s_size = len(indices_s)
                 sum_expr = gp.LinExpr()
                 valid_indices_count = 0
@@ -83,12 +73,9 @@ class MLagrangianStrategy(SeparationStrategy):
                     if k < len(vars_list):
                         sum_expr.add(vars_list[k])
                         valid_indices_count += 1
-
                 if valid_indices_count == s_size:
                     model.addConstr(w_var >= sum_expr - (s_size - 1), name=f"mc_ge_{w_name}")
-
             penalty_expr.add(w_var, coeff)
-
         return penalty_expr
 
     def evaluate_cut(self, column_signature: Tuple, cut_signature: Any) -> float:

@@ -1,6 +1,6 @@
 
 from dataclasses import dataclass
-from typing import List, Dict, Tuple
+from typing import List, Dict, Tuple, Union
 
 @dataclass
 class EdgeInfo:
@@ -10,14 +10,40 @@ class EdgeInfo:
     vars_v: List[int]
 
 class TopologyManager:
-    def __init__(self, num_blocks: int):
-        self.num_blocks = num_blocks
+    def __init__(self, block_sizes: Union[int, List[int]]):
+        """
+        Args:
+            block_sizes: Puede ser una lista de enteros donde block_sizes[i] es
+                         el nro de variables del bloque i, o un entero si todos
+                         tienen el mismo tamaño (se asume n_blocks inferido luego
+                         o no aplicable en modo entero único, mejor pasar lista).
+        """
+        if isinstance(block_sizes, int):
+            # Modo legacy/simple: se asume que el usuario definirá la topología
+            # y el número de bloques implícitamente, o esto es solo un placeholder.
+            # Para robustez, asumimos que es una lista si queremos heterogeneidad.
+            # Aquí guardamos el tamaño default.
+            self.block_sizes = {} # Se llenará bajo demanda o error
+            self.default_size = block_sizes
+            self.num_blocks = 0
+        else:
+            self.block_sizes = block_sizes
+            self.num_blocks = len(block_sizes)
+            self.default_size = None
+
         self.edges: Dict[Tuple[int, int], EdgeInfo] = {}
-        self.adj: Dict[int, List[int]] = {i: [] for i in range(num_blocks)}
+        self.adj: Dict[int, List[int]] = {i: [] for i in range(self.num_blocks)}
+
+    def _get_size(self, block_id: int) -> int:
+        if isinstance(self.block_sizes, list):
+            return self.block_sizes[block_id]
+        return self.default_size
 
     def add_coupling(self, u: int, v: int, indices_u: List[int], indices_v: List[int]):
         key = tuple(sorted((u, v)))
         self.edges[key] = EdgeInfo(u, v, indices_u, indices_v)
+        if u not in self.adj: self.adj[u] = []
+        if v not in self.adj: self.adj[v] = []
         self.adj[u].append(v)
         self.adj[v].append(u)
 
@@ -25,36 +51,73 @@ class TopologyManager:
         return self.edges.get(tuple(sorted((u, v))))
 
     def get_neighbors(self, u: int) -> List[int]:
-        return self.adj[u]
+        return self.adj.get(u, [])
 
-    def create_star(self, center: int, n_nodes: int, coupling_size: int):
-        indices = list(range(coupling_size))
+    def create_star(self, center: int, coupling_size: int):
+        """
+        Estrella: El centro comparte sus primeras variables con el inicio de cada hoja.
+        Center[0...C] <==> Leaf[0...C]
+        (Sincronización masiva de las primeras variables)
+        """
+        center_size = self._get_size(center)
+        if center_size < coupling_size:
+            raise ValueError(f"Block {center} size {center_size} < coupling {coupling_size}")
+
+        indices_center = list(range(coupling_size))
+
         for i in range(self.num_blocks):
             if i != center:
-                self.add_coupling(center, i, indices, indices)
+                leaf_size = self._get_size(i)
+                if leaf_size < coupling_size:
+                    raise ValueError(f"Block {i} size {leaf_size} < coupling {coupling_size}")
 
-    def create_path(self, n_nodes: int, coupling_size: int):
+                indices_leaf = list(range(coupling_size))
+                self.add_coupling(center, i, indices_center, indices_leaf)
+
+    def create_path(self, coupling_size: int):
+        """
+        Camino: Block[i] (Fin) <==> Block[i+1] (Inicio)
+        """
         for i in range(self.num_blocks - 1):
-            indices_u = list(range(n_nodes - coupling_size, n_nodes))
+            u, v = i, i+1
+            size_u = self._get_size(u)
+            size_v = self._get_size(v)
+
+            if size_u < coupling_size or size_v < coupling_size:
+                raise ValueError(f"Blocks {u},{v} too small for coupling {coupling_size}")
+
+            # Salida de U: Últimas variables
+            indices_u = list(range(size_u - coupling_size, size_u))
+            # Entrada de V: Primeras variables
             indices_v = list(range(coupling_size))
-            self.add_coupling(i, i+1, indices_u, indices_v)
 
-    def create_bintree(self, n_nodes: int, coupling_size: int):
-        if n_nodes < coupling_size:
-             raise ValueError(f"n_nodes ({n_nodes}) debe ser al menos coupling ({coupling_size})")
+            self.add_coupling(u, v, indices_u, indices_v)
 
+    def create_bintree(self, coupling_size: int):
+        """
+        Arbol Binario (Estocástico):
+        Padre (Fin) <==> Hijo Izq (Inicio)
+        Padre (Fin) <==> Hijo Der (Inicio)
+        El padre comparte el MISMO estado (sus últimas variables) con ambos hijos.
+        """
         for i in range(self.num_blocks):
-            left = 2 * i + 1
-            right = 2 * i + 2
+            size_parent = self._get_size(i)
 
-            # Logic: Stochastic Multistage Style
-            # Parent outputs same state to both children (Non-anticipativity implicit)
-            # Input: [0, C), Output: [N-C, N)
-            indices_u = list(range(n_nodes - coupling_size, n_nodes)) # Output vars
-            indices_v = list(range(coupling_size)) # Input vars
+            # Puerto de salida del padre (Cola)
+            if size_parent < coupling_size:
+                 raise ValueError(f"Block {i} too small")
+            indices_u = list(range(size_parent - coupling_size, size_parent))
 
-            if left < self.num_blocks:
-                self.add_coupling(i, left, indices_u, indices_v)
+            # Hijos
+            children = []
+            if 2 * i + 1 < self.num_blocks: children.append(2 * i + 1)
+            if 2 * i + 2 < self.num_blocks: children.append(2 * i + 2)
 
-            if right < self.num_blocks:
-                self.add_coupling(i, right, indices_u, indices_v)
+            for child in children:
+                size_child = self._get_size(child)
+                if size_child < coupling_size:
+                    raise ValueError(f"Child Block {child} too small")
+
+                # Puerto de entrada del hijo (Cabeza)
+                indices_v = list(range(coupling_size))
+                self.add_coupling(i, child, indices_u, indices_v)
