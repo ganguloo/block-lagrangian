@@ -1,3 +1,4 @@
+
 import gurobipy as gp
 from typing import List, Dict, Tuple, Any
 from .base_strategy import SeparationStrategy
@@ -24,10 +25,8 @@ class VLagrangianStrategy(SeparationStrategy):
             mu = duals[cut_id]
             coeff = sign_factor * mu
             if abs(coeff) < 1e-9: continue
-
             w_name = f"w_v_{cut_id}"
             w_var = model.getVarByName(w_name)
-
             if w_var is None:
                 w_var = model.addVar(vtype=gp.GRB.BINARY, name=w_name)
                 delta_expr = gp.LinExpr()
@@ -40,7 +39,6 @@ class VLagrangianStrategy(SeparationStrategy):
                         delta_expr.add(vars_list[i], 1.0)
                 model.addConstr(delta_expr <= n * (1 - w_var), name=f"H_le_{w_name}")
                 model.addConstr(delta_expr >= 1 - w_var, name=f"H_ge_{w_name}")
-
             penalty_expr.add(w_var, coeff)
         return penalty_expr
 

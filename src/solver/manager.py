@@ -1,3 +1,4 @@
+
 import time
 import gurobipy as gp
 import concurrent.futures
@@ -120,7 +121,10 @@ class CRGManager:
         }
 
         start_total = time.time()
-        if all(hasattr(i, 'inherit_conflicts') for i in self.blocks): self._propagate_conflicts()
+
+        if all(hasattr(i, 'inherit_conflicts') for i in self.blocks):
+            self._propagate_conflicts()
+
         for p in self.pricers: p.rebuild_model()
         self._initialize_from_monolithic()
 

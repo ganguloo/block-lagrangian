@@ -1,3 +1,4 @@
+
 import gurobipy as gp
 from typing import List, Dict, Tuple, Any
 from itertools import combinations
@@ -19,7 +20,6 @@ class MLagrangianStrategy(SeparationStrategy):
         first_sig = next(iter(w_sol_u)) if w_sol_u else next(iter(w_sol_v))
         n_vars = len(first_sig)
         violations = []
-
         for deg in range(self.mindeg, self.maxdeg + 1):
             relevant_subsets = set()
             def collect_subsets(w_sol):
@@ -31,7 +31,6 @@ class MLagrangianStrategy(SeparationStrategy):
                             relevant_subsets.add(subset)
             collect_subsets(w_sol_u)
             collect_subsets(w_sol_v)
-
             for subset in relevant_subsets:
                 eu = 0.0
                 for sig, weight in w_sol_u.items():
@@ -39,11 +38,9 @@ class MLagrangianStrategy(SeparationStrategy):
                 ev = 0.0
                 for sig, weight in w_sol_v.items():
                     if all(sig[i] > 0.5 for i in subset): ev += weight
-
                 diff = abs(eu - ev)
                 if diff > self.tol:
                     violations.append((subset, diff))
-
         violations.sort(key=lambda x: x[1], reverse=True)
         limit = int(self.factor * n_vars) if self.factor > 0 else self.max_cuts
         limit = max(limit, self.max_cuts)
@@ -57,10 +54,8 @@ class MLagrangianStrategy(SeparationStrategy):
             mu = duals[cut_id]
             coeff = sign_factor * mu
             if abs(coeff) < 1e-9: continue
-
             w_name = f"w_cut_{cut_id}"
             w_var = model.getVarByName(w_name)
-
             if w_var is None:
                 w_var = model.addVar(vtype=gp.GRB.BINARY, name=w_name)
                 for k in indices_s:

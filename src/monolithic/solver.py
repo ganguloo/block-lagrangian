@@ -1,3 +1,4 @@
+
 import gurobipy as gp
 import time
 from typing import List, Dict, Any
@@ -61,7 +62,6 @@ class MonolithicSolver:
 
         if time_limit:
             self.model.Params.TimeLimit = time_limit
-
         if work_limit:
             self.model.Params.WorkLimit = work_limit
 
