@@ -59,6 +59,7 @@ class IntegerLShapedSolver:
                 v_in_lp = m_lp.getVarByName(name)
                 c = m_lp.addConstr(v_in_lp == 0.0, name=f"link_{name}")
                 link_constrs.append(c)
+                v_in_lp.ub = gp.GRB.INFINITY
 
             self.leaf_models_lp.append(m_lp)
             self.leaf_link_constrs_lp.append(link_constrs)
