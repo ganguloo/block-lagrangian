@@ -13,6 +13,7 @@ from src.strategies.v_lagrangian import VLagrangianStrategy
 from src.solver.manager import CRGManager
 from src.monolithic.solver import MonolithicSolver
 from src.solvers.integer_lshaped import IntegerLShapedSolver
+from src.solvers.scenario_decomposition import ScenarioDecompositionSolver
 
 # ==================== CONFIGURATION ====================
 OUTPUT_FILE = "benchmark_results.csv"
@@ -29,6 +30,7 @@ SOLVER_CONFIGS = [
     {"name": "Monolithic", "type": "mono", "time_limit": 300},
     {"name": "CRG_VLag", "type": "crg", "class": VLagrangianStrategy, "args": {}, "time_limit": 300},
     {"name": "IntegerLShaped", "type": "lshaped", "time_limit": 300},
+    {"name": "ScenarioDecomp", "type": "scenario", "time_limit": 300},
 ]
 # ========================================================
 
@@ -39,7 +41,6 @@ def get_completed_runs():
             try:
                 reader = csv.DictReader(f)
                 for row in reader:
-                    # Comprehensive key to avoid re-running identical instances
                     key = (
                         row.get("problem", "unknown"),
                         row["topo"],
@@ -82,7 +83,6 @@ def run_experiment():
                 topo_type = inst_conf["topo"]
                 n_edges = inst_conf.get("n_edges", 0)
 
-                # Pre-cap edges for loop display and key generation
                 if problem_type == "matching":
                     max_possible = (n_nodes * (n_nodes - 1)) // 2
                     if n_edges > max_possible:
@@ -91,21 +91,19 @@ def run_experiment():
                 print(f"\n>>> Processing Instance: {problem_type}, {topo_type}, {n_blocks} blocks, {n_nodes} nodes, {n_edges} edges, Seed {seed}")
 
                 for solver_conf in SOLVER_CONFIGS:
-                    # FIX V47: Comprehensive check against completed runs
                     run_key = (problem_type, topo_type, n_blocks, n_nodes, n_edges, coupling, seed, solver_conf["name"])
 
                     if run_key in completed_runs:
                         print(f"  > Skipping {solver_conf['name']} (Already done)")
                         continue
 
-                    if solver_conf["type"] == "lshaped" and topo_type != "star":
+                    if (solver_conf["type"] == "lshaped" or solver_conf["type"] == "scenario") and topo_type != "star":
                         print(f"  > Skipping {solver_conf['name']} (Topology not supported)")
                         continue
 
                     print(f"  > Running {solver_conf['name']}...")
                     gc.collect()
 
-                    # FIX V47: Create blocks FIRST, then deduce sizes for Topology
                     blocks = []
                     block_sizes = []
 
@@ -117,7 +115,6 @@ def run_experiment():
                         elif problem_type == "matching":
                             b = MatchingBlock(i, n_nodes, n_edges, seed=seed+i)
                             blocks.append(b)
-                            # For Matching, vars are edges. MatchingBlock calculates actual edges in __init__
                             block_sizes.append(b.num_edges)
 
                     topology = TopologyManager(block_sizes)
@@ -187,6 +184,18 @@ def run_experiment():
                                 "dual_bound": res["dual_bound"],
                                 "gap": res["gap"],
                                 "node_count": res["node_count"]
+                            })
+
+                        elif solver_conf["type"] == "scenario":
+                            solver = ScenarioDecompositionSolver(topology, blocks)
+                            res = solver.solve(time_limit=solver_conf["time_limit"])
+                            row.update({
+                                "status": res["status"],
+                                "total_time": res["total_time"],
+                                "primal_bound": res["primal_bound"],
+                                "dual_bound": res["dual_bound"],
+                                "gap": res["gap"],
+                                "iter_outer": res["iter"]
                             })
 
                     except Exception as e:
