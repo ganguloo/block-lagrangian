@@ -1,4 +1,3 @@
-
 import time
 import gurobipy as gp
 import concurrent.futures
@@ -133,7 +132,7 @@ class CRGManager:
 
         while True:
             metrics["iter_outer"] += 1
-            print(f"\n--- Iteración Externa {metrics['iter_outer']} --- {datetime.now()}")
+            print(f"\\n--- Iteración Externa {metrics['iter_outer']} --- {datetime.now()}")
 
             if time_limit and (time.time() - start_total) > time_limit:
                 metrics["status"] = "TimeLimit"
@@ -174,21 +173,39 @@ class CRGManager:
                 tasks = [(i, alpha[i], pi, mu, self.active_cuts_by_edge) for i in range(len(self.pricers))]
                 results = self.executor.map(self._solve_pricing_task, tasks)
 
+                # --- V69: Cota Lagrangiana (Dual Bound) ---
+                sum_reduced_costs = 0.0
+                all_pricers_solved = True
+
                 for i, res in results:
                     if res:
                         rc, obj, x_b, w_s = res
+                        sum_reduced_costs += rc  # rc aquí es el valor óptimo del pricing (costo reducido)
+
                         if rc > 1e-4:
                             added = self.master.add_column(i, obj, x_b, w_s, self.active_cuts_by_edge, self.strategy)
                             if added:
                                 cols_added_iter += 1
                                 max_rc = max(max_rc, rc)
+                    else:
+                        all_pricers_solved = False
+
+                if all_pricers_solved:
+                    # En CG para maximización, Dual Bound = Z_Master + Sum(Reduced Costs)
+                    current_lagrangian_bound = current_obj + sum_reduced_costs
+                    # "Actualizar solo si decrece"
+                    if current_lagrangian_bound < metrics["dual_bound"]:
+                        metrics["dual_bound"] = current_lagrangian_bound
+
                 metrics["time_pricing"] += time.time() - t0
                 metrics["cols_added"] += cols_added_iter
                 inner_cols += cols_added_iter
 
-                print(f"  Iter {metrics['iter_total_inner']}: Obj {current_obj:.4f} {star}, Time {(time.time()-start_total):.1f}s, Cols +{cols_added_iter}")
+                # Agregado DB al log
+                print(f"  Iter {metrics['iter_total_inner']}: Obj {current_obj:.4f} {star}, DB {metrics['dual_bound']:.4f}, Time {(time.time()-start_total):.1f}s, Cols +{cols_added_iter}")
 
                 if cols_added_iter == 0:
+                    # Al converger, el dual bound es exactamente el valor del maestro
                     metrics["dual_bound"] = current_obj
                     break
 
