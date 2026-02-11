@@ -1,9 +1,115 @@
-
 import time
 import gurobipy as gp
+import threading
+import queue
+import copy
 from typing import List, Dict, Any
 from ..blocks.base_block import AbstractBlock
 from ..instance.topology import TopologyManager
+
+class LeafWorker(threading.Thread):
+    """
+    Patrón Actor: Un Worker persistente que posee sus propios modelos de Gurobi
+    y su propio entorno. Escucha comandos por colas y devuelve datos puros de Python.
+    """
+    def __init__(self, leaf_idx, leaf_block_copy, var_names, in_q, out_q):
+        super().__init__()
+        self.leaf_idx = leaf_idx
+        self.leaf_block = leaf_block_copy
+        self.var_names = var_names
+        self.in_q = in_q
+        self.out_q = out_q
+
+        self.env = None
+        self.m_lp = None
+        self.m_mip = None
+        self.link_constrs_lp = []
+        self.link_constrs_mip = []
+
+    def run(self):
+        # 1. Entorno Dedicado
+        self.env = gp.Env(empty=True)
+        self.env.setParam("OutputFlag", 0)
+        self.env.setParam("Threads", 1)
+        self.env.start()
+
+        # 2. Modelo LP (Benders)
+        m_lp_temp = gp.Model(f"Leaf_{self.leaf_idx}_LP_temp", env=self.env)
+        self.leaf_block.build_model(parent_model=m_lp_temp)
+        m_lp_temp.setObjective(self.leaf_block.local_objective_expr, gp.GRB.MAXIMIZE)
+        m_lp_temp.update()
+
+        self.m_lp = m_lp_temp.relax()
+        self.m_lp.ModelName = f"Leaf_{self.leaf_idx}_LP"
+        self.m_lp.Params.InfUnbdInfo = 1
+        self.m_lp.Params.DualReductions = 0
+        self.m_lp.update()
+
+        for name in self.var_names:
+            v_in_lp = self.m_lp.getVarByName(name)
+            c = self.m_lp.addConstr(v_in_lp == 0.0, name=f"link_{name}")
+            self.link_constrs_lp.append(c)
+            v_in_lp.UB = gp.GRB.INFINITY # Fix Benders
+        self.m_lp.update()
+
+        # 3. Modelo MIP (Integer L-Shaped)
+        self.m_mip = gp.Model(f"Leaf_{self.leaf_idx}_MIP", env=self.env)
+        self.leaf_block.build_model(parent_model=self.m_mip)
+        self.m_mip.setObjective(self.leaf_block.local_objective_expr, gp.GRB.MAXIMIZE)
+        self.m_mip.update()
+
+        for name in self.var_names:
+            v_in_mip = self.m_mip.getVarByName(name)
+            c = self.m_mip.addConstr(v_in_mip == 0.0, name=f"link_{name}")
+            self.link_constrs_mip.append(c)
+        self.m_mip.update()
+
+        # 4. Bucle de Eventos (Actor Pattern)
+        while True:
+            cmd, payload = self.in_q.get()
+
+            try:
+                if cmd == "STOP":
+                    self.out_q.put((self.leaf_idx, "STOP_ACK", True))
+                    break
+
+                elif cmd == "SOLVE_LP":
+                    for c, val in zip(self.link_constrs_lp, payload):
+                        c.RHS = val
+
+                    self.m_lp.optimize()
+
+                    status = self.m_lp.Status
+                    obj_val = 0.0
+                    duals = []
+                    farkas = []
+
+                    if status == gp.GRB.OPTIMAL:
+                        obj_val = self.m_lp.ObjVal
+                        duals = [c.Pi for c in self.link_constrs_lp]
+                    elif status == gp.GRB.INF_OR_UNBD or status == gp.GRB.INFEASIBLE:
+                        obj_val = -self.m_lp.FarkasProof
+                        farkas = [c.FarkasDual for c in self.link_constrs_lp]
+
+                    self.out_q.put((self.leaf_idx, "LP", (status, obj_val, duals, farkas)))
+
+                elif cmd == "SOLVE_MIP":
+                    for c, val in zip(self.link_constrs_mip, payload):
+                        c.RHS = val
+
+                    self.m_mip.optimize()
+
+                    status = self.m_mip.Status
+                    obj_val = self.m_mip.ObjVal if status == gp.GRB.OPTIMAL else -1e9
+                    self.out_q.put((self.leaf_idx, "MIP", (status, obj_val)))
+
+            except Exception as e:
+                self.out_q.put((self.leaf_idx, "ERROR", None))
+                print(f"LeafWorker {self.leaf_idx} Error: {e}")
+
+        # Limpieza al terminar
+        self.env.dispose()
+
 
 class IntegerLShapedSolver:
     def __init__(self, topology: TopologyManager, blocks: List[AbstractBlock]):
@@ -16,68 +122,58 @@ class IntegerLShapedSolver:
         self.time_limit = float('inf')
         self.global_upper_bound_U = 0.0
 
-        self.leaf_models_lp = []
-        self.leaf_models_mip = []
-        self.leaf_link_constrs_lp = []
-        self.leaf_link_constrs_mip = []
+        self.K = len(self.leaf_blocks)
+        self.in_queues = [queue.Queue() for _ in range(self.K)]
+        self.out_queue = queue.Queue()
+        self.workers = []
 
-        self._prepare_leaves()
+        self._prepare_workers()
         self._build_master()
 
-    def _prepare_leaves(self):
+    def _prepare_workers(self):
         total_max_possible = 0.0
 
-        for leaf in self.leaf_blocks:
-            m_relaxed = gp.Model(f"Leaf_{leaf.block_id}_Relaxed")
-            m_relaxed.Params.OutputFlag = 0
-            leaf.build_model(parent_model=m_relaxed)
-            m_relaxed.setObjective(leaf.local_objective_expr, gp.GRB.MAXIMIZE)
-            m_relaxed.update()
-            m_relaxed.optimize()
-            if m_relaxed.Status == gp.GRB.OPTIMAL:
-                total_max_possible += m_relaxed.ObjVal
-
+        for i, leaf in enumerate(self.leaf_blocks):
+            # 1. Cota superior precalculada sincrónicamente
             m_temp = gp.Model()
+            m_temp.Params.OutputFlag = 0
             leaf.build_model(parent_model=m_temp)
+
             m_temp.update()
 
+            # 2. Extraer Nombres de Variables para el Acople
             edge = self.topology.get_edge(self.center_block.block_id, leaf.block_id)
             temp_vars = leaf.get_vars_by_index(edge.vars_v)
             var_names = [v.VarName for v in temp_vars]
 
-            m_lp = gp.Model(f"Leaf_{leaf.block_id}_LP")
-            m_lp.Params.OutputFlag = 0
-            m_lp.Params.InfUnbdInfo = 1
-            leaf.build_model(parent_model=m_lp)
-            m_lp.setObjective(leaf.local_objective_expr, gp.GRB.MAXIMIZE)
-            m_lp.update()
-            m_lp = m_lp.relax()
-            m_lp.update()
+            # Optimizar para el Big-M
+            m_temp.setObjective(leaf.local_objective_expr, gp.GRB.MAXIMIZE)
+            m_relax = m_temp.relax()
+            m_relax.optimize()
+            if m_relax.Status == gp.GRB.OPTIMAL:
+                total_max_possible += m_relax.ObjVal
 
-            link_constrs = []
-            for name in var_names:
-                v_in_lp = m_lp.getVarByName(name)
-                c = m_lp.addConstr(v_in_lp == 0.0, name=f"link_{name}")
-                link_constrs.append(c)
-                v_in_lp.ub = gp.GRB.INFINITY
+            # 3. Desenganchar objetos de C++ (Gurobi) antes del deepcopy
+            orig_model = leaf.model
+            orig_vars = leaf.vars
+            orig_obj = leaf.local_objective_expr
 
-            self.leaf_models_lp.append(m_lp)
-            self.leaf_link_constrs_lp.append(link_constrs)
+            leaf.model = None
+            leaf.vars = {}
+            leaf.local_objective_expr = None
 
-            m_mip = gp.Model(f"Leaf_{leaf.block_id}_MIP")
-            m_mip.Params.OutputFlag = 0
-            leaf.build_model(parent_model=m_mip)
-            m_mip.setObjective(leaf.local_objective_expr, gp.GRB.MAXIMIZE)
-            m_mip.update()
+            # Ahora el deepcopy funciona (copia solo estructuras de Python nativas)
+            leaf_copy = copy.deepcopy(leaf)
 
-            link_constrs_mip = []
-            for name in var_names:
-                v_in_mip = m_mip.getVarByName(name)
-                c = m_mip.addConstr(v_in_mip == 0.0, name=f"link_{name}")
-                link_constrs_mip.append(c)
+            # Restaurar estado original por si el Main Thread lo necesita
+            leaf.model = orig_model
+            leaf.vars = orig_vars
+            leaf.local_objective_expr = orig_obj
 
-            self.leaf_models_mip.append(m_mip)
-            self.leaf_link_constrs_mip.append(link_constrs_mip)
+            # 4. Levantar Worker Persistente aislado
+            w = LeafWorker(i, leaf_copy, var_names, self.in_queues[i], self.out_queue)
+            w.start()
+            self.workers.append(w)
 
         self.global_upper_bound_U = total_max_possible + 100.0
 
@@ -94,6 +190,7 @@ class IntegerLShapedSolver:
         full_obj = self.center_block.local_objective_expr.copy()
         full_obj.add(self.theta, 1.0)
         self.master.setObjective(full_obj, gp.GRB.MAXIMIZE)
+        self.master.update()
 
         self.center_edge_vars_indices = []
         for leaf in self.leaf_blocks:
@@ -112,6 +209,16 @@ class IntegerLShapedSolver:
                 expr.add(var, 1.0)
         return expr
 
+    def _broadcast_and_wait(self, cmd, payloads):
+        for i in range(self.K):
+            self.in_queues[i].put((cmd, payloads[i]))
+
+        results = [None] * self.K
+        for _ in range(self.K):
+            i, _, data = self.out_queue.get()
+            results[i] = data
+        return results
+
     def solve(self, time_limit=None) -> Dict[str, Any]:
         if time_limit:
             self.master.Params.TimeLimit = time_limit
@@ -124,27 +231,28 @@ class IntegerLShapedSolver:
                 center_vars_list = list(self.center_block.vars.values())
                 center_vals = model.cbGetSolution(center_vars_list)
                 x_center_sol = dict(zip(self.center_block.vars.keys(), center_vals))
-
                 theta_sol = model.cbGetSolution(self.theta)
+
+                # --- PHASE 1: LP Cuts (Benders) Paralelos ---
+                lp_payloads = [
+                    [x_center_sol[idx] for idx in self.center_edge_vars_indices[i]]
+                    for i in range(self.K)
+                ]
+
+                lp_results = self._broadcast_and_wait("SOLVE_LP", lp_payloads)
 
                 total_lp_obj = 0.0
                 cut_expr_lp = 0.0
                 possible_benders = True
 
-                for i, leaf_lp in enumerate(self.leaf_models_lp):
+                for i, result in enumerate(lp_results):
+                    status, obj_val, duals, farkas = result
                     indices = self.center_edge_vars_indices[i]
-                    vals = [x_center_sol[idx] for idx in indices]
+                    vals = lp_payloads[i]
 
-                    for constr, val in zip(self.leaf_link_constrs_lp[i], vals):
-                        constr.RHS = val
-
-                    leaf_lp.optimize()
-
-                    if leaf_lp.Status == gp.GRB.OPTIMAL:
-                        total_lp_obj += leaf_lp.ObjVal
-                        duals = [c.Pi for c in self.leaf_link_constrs_lp[i]]
-
-                        term_const = leaf_lp.ObjVal
+                    if status == gp.GRB.OPTIMAL:
+                        total_lp_obj += obj_val
+                        term_const = obj_val
                         term_var = gp.LinExpr()
                         center_vars = self.center_block.get_vars_by_index(indices)
 
@@ -154,54 +262,51 @@ class IntegerLShapedSolver:
 
                         cut_expr_lp += (term_const + term_var)
 
-                    elif leaf_lp.Status == gp.GRB.INF_OR_UNBD or leaf_lp.Status == gp.GRB.INFEASIBLE:
-                        # FIX V47: Negative FarkasProof for maximization feasibility cut
-                        farkas_val = -leaf_lp.FarkasProof
-                        duals = [c.FarkasDual for c in self.leaf_link_constrs_lp[i]]
-
-                        term_const_feas = farkas_val
+                    elif status == gp.GRB.INF_OR_UNBD or status == gp.GRB.INFEASIBLE:
+                        term_const_feas = obj_val # FarkasProof invertido (-FarkasProof)
                         term_var_feas = gp.LinExpr()
                         center_vars = self.center_block.get_vars_by_index(indices)
 
-                        for d, v, v_val in zip(duals, center_vars, vals):
+                        for d, v, v_val in zip(farkas, center_vars, vals):
                             term_const_feas -= d * v_val
                             term_var_feas.add(v, d)
 
-                        # FIX V47: Direction is >= 0.0
                         model.cbLazy(term_var_feas + term_const_feas >= 0.0)
-                        return
-
+                        possible_benders = False
                     else:
                         possible_benders = False
-                        break
 
                 if possible_benders:
                     if theta_sol > total_lp_obj + 1e-4:
                         model.cbLazy(self.theta <= cut_expr_lp)
                         return
+                else:
+                    return # Ceder control tras un corte de factibilidad
+
+                # --- PHASE 2: MIP Cuts (Integer L-Shaped) Paralelos ---
+                mip_payloads = lp_payloads
+                mip_results = self._broadcast_and_wait("SOLVE_MIP", mip_payloads)
 
                 total_mip_obj = 0.0
                 all_coupling_indices = set()
+                must_add_integer_cut = False
 
-                for i, leaf_mip in enumerate(self.leaf_models_mip):
+                for i, result in enumerate(mip_results):
+                    status, obj_val = result
                     indices = self.center_edge_vars_indices[i]
                     all_coupling_indices.update(indices)
 
-                    vals = [x_center_sol[idx] for idx in indices]
-
-                    for constr, val in zip(self.leaf_link_constrs_mip[i], vals):
-                        constr.RHS = val
-
-                    leaf_mip.optimize()
-
-                    if leaf_mip.Status == gp.GRB.OPTIMAL:
-                        total_mip_obj += leaf_mip.ObjVal
-                    elif leaf_mip.Status == gp.GRB.INF_OR_UNBD or leaf_mip.Status == gp.GRB.INFEASIBLE:
+                    if status == gp.GRB.OPTIMAL:
+                        total_mip_obj += obj_val
+                    elif status == gp.GRB.INF_OR_UNBD or status == gp.GRB.INFEASIBLE:
                         hamming_dist = self._get_hamming_distance_expr(model, indices, x_center_sol)
                         model.cbLazy(hamming_dist >= 1)
-                        return
+                        must_add_integer_cut = True
                     else:
                         total_mip_obj += -1e9
+
+                if must_add_integer_cut:
+                    return
 
                 if theta_sol > total_mip_obj + 1e-4:
                     sorted_all_indices = sorted(list(all_coupling_indices))
@@ -213,7 +318,14 @@ class IntegerLShapedSolver:
                     cut_rhs = (U_val - Q_val) * hamming_dist_union + Q_val
                     model.cbLazy(self.theta <= cut_rhs)
 
-        self.master.optimize(cb)
+        try:
+            self.master.optimize(cb)
+        finally:
+            # Apagado limpio de Workers
+            for q in self.in_queues:
+                q.put(("STOP", None))
+            for w in self.workers:
+                w.join()
 
         metrics = {
             "method": "IntegerLShaped",
