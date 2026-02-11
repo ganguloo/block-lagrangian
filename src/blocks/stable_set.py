@@ -9,12 +9,14 @@ class StableSetBlock(AbstractBlock):
                  seed: int = 42, weights: List[float] = None):
         super().__init__(block_id, name=f"StableSet_{block_id}")
         self.num_nodes = num_nodes
+        rng = np.random.default_rng(seed + block_id)
+        density = rng.uniform(0.1, 0.15)
         self.edges = self._generate_graph(num_nodes, density, seed + block_id)
         self.edge_set: Set[Tuple[int, int]] = set(tuple(sorted(e)) for e in self.edges)
 
         rng = np.random.default_rng(seed + block_id)
         if weights is None:
-            self.weights = list(rng.integers(1, 11, size=num_nodes))
+            self.weights = [1 for _ in range(num_nodes)] #list(rng.integers(1, 11, size=num_nodes))
         else:
             self.weights = weights
 

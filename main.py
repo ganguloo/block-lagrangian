@@ -16,21 +16,24 @@ from src.solvers.integer_lshaped import IntegerLShapedSolver
 from src.solvers.scenario_decomposition import ScenarioDecompositionSolver
 
 # ==================== CONFIGURATION ====================
-OUTPUT_FILE = "benchmark_results.csv"
+OUTPUT_FILE = "benchmark_results_cardinality_star_stable_matching.csv"
 
 INSTANCE_GRID = [
-    {"problem": "stable_set", "n_blocks": 5, "n_nodes": 50, "n_edges": 0, "coupling": 10, "topo": "star"},
-    {"problem": "matching", "n_blocks": 5, "n_nodes": 50, "n_edges": 100, "coupling": 10, "topo": "star"},
-    {"problem": "matching", "n_blocks": 31, "n_nodes": 20, "n_edges": 200, "coupling": 20, "topo": "bintree"},
+    {"problem": "stable_set", "n_blocks": 15, "n_nodes": 100, "n_edges": 0, "coupling": 20, "topo": "star"},
+    {"problem": "stable_set", "n_blocks": 15, "n_nodes": 100, "n_edges": 0, "coupling": 30, "topo": "star"},
+    {"problem": "stable_set", "n_blocks": 15, "n_nodes": 100, "n_edges": 0, "coupling": 40, "topo": "star"},
+#    {"problem": "matching", "n_blocks": 5, "n_nodes": 50, "n_edges": 100, "coupling": 10, "topo": "star"},
+#    {"problem": "matching", "n_blocks": 31, "n_nodes": 20, "n_edges": 200, "coupling": 20, "topo": "bintree"},
 ]
 
-SEEDS = [0, 1]
+SEEDS = [i for i in range(5)]
 
 SOLVER_CONFIGS = [
-    {"name": "Monolithic", "type": "mono", "time_limit": 300},
-    {"name": "CRG_VLag", "type": "crg", "class": VLagrangianStrategy, "args": {}, "time_limit": 300},
-    {"name": "IntegerLShaped", "type": "lshaped", "time_limit": 300},
-    {"name": "ScenarioDecomp", "type": "scenario", "time_limit": 300},
+#    {"name": "Monolithic", "type": "mono", "time_limit": 900},
+    {"name": "CRG_VLag", "type": "crg", "class": VLagrangianStrategy, "args": {}, "time_limit": 900},
+    {"name": "CRG_MLag_maxdeg2", "type": "crg", "class": MLagrangianStrategy, "args": {}, "time_limit": 900},
+    {"name": "IntegerLShaped", "type": "lshaped", "time_limit": 900},
+#    {"name": "ScenarioDecomp", "type": "scenario", "time_limit": 900},
 ]
 # ========================================================
 
