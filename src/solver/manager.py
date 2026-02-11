@@ -204,19 +204,15 @@ class CRGManager:
                 # Agregado DB al log
                 print(f"  Iter {metrics['iter_total_inner']}: Obj {current_obj:.4f} {star}, DB {metrics['dual_bound']:.4f}, Time {(time.time()-start_total):.1f}s, Cols +{cols_added_iter}")
 
-                if cols_added_iter == 0:
-                    # Al converger, el dual bound es exactamente el valor del maestro
-                    metrics["dual_bound"] = current_obj
-                    break
+                if metrics["dual_bound"] > 0 and metrics["primal_bound"] > -1e8:
+                    current_gap = abs(metrics["dual_bound"] - metrics["primal_bound"]) / abs(metrics["dual_bound"])
+                    if current_gap < 1e-4:
+                        metrics["status"] = "Gap_Closed"
+                        stop_outer = True
+                        break
 
             if metrics["iter_outer"] == 1 and metrics["root_lp_val"] is None:
                 metrics["root_lp_val"] = metrics["dual_bound"]
-
-            if metrics["dual_bound"] > 0 and metrics["primal_bound"] > -1e8:
-                current_gap = abs(metrics["dual_bound"] - metrics["primal_bound"]) / abs(metrics["dual_bound"])
-                if current_gap < 1e-4:
-                    metrics["status"] = "Gap_Closed"
-                    stop_outer = True
 
             if stop_outer:
                 print(f"Fin Outer {metrics['iter_outer']} (Interrupted): Obj {metrics['dual_bound']:.4f}, Status: {metrics['status']}")
