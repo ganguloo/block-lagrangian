@@ -117,22 +117,43 @@ class LeafWorker(threading.Thread):
 
 class IntegerLShapedSolver:
     def __init__(self, topology: TopologyManager, blocks: List[AbstractBlock]):
-        self.topology = topology
-        self.blocks = blocks
-        self.center_block = blocks[0]
-        self.leaf_blocks = blocks[1:]
-        
-        self.time_start = 0.0
-        self.time_limit = float('inf')
-        self.global_upper_bound_U = 0.0
-        
-        self.K = len(self.leaf_blocks)
-        self.in_queues = [queue.Queue() for _ in range(self.K)]
-        self.out_queue = queue.Queue()
-        self.workers = []
-        
-        self._prepare_workers()
-        self._build_master()
+            self.topology = topology
+            self.blocks = blocks          # <-- Asegúrate de tener guardado self.blocks
+            self.center_block = blocks[0]
+            self.leaf_blocks = blocks[1:]
+            
+            self.time_start = 0.0
+            self.time_limit = float('inf')
+            self.global_upper_bound_U = 0.0
+            
+            self.K = len(self.leaf_blocks)
+            self.in_queues = [queue.Queue() for _ in range(self.K)]
+            self.out_queue = queue.Queue()
+            self.workers = []
+            
+            # --- PROPAGACIÓN DE CONFLICTOS ---
+            if all(hasattr(b, 'inherit_conflicts') for b in self.blocks):
+                self._propagate_conflicts()
+                
+            self._prepare_workers()
+            self._build_master()
+
+    def _propagate_conflicts(self):
+            print("Pre-procesamiento: Propagando conflictos Stable Set en L-Shaped...")
+            changed = True
+            while changed:
+                changed = False
+                for (u_id, v_id), edge_info in self.topology.edges.items():
+                    blk_u = next(b for b in self.blocks if b.block_id == u_id)
+                    blk_v = next(b for b in self.blocks if b.block_id == v_id)
+                    
+                    # Propagar de u hacia v
+                    if blk_v.inherit_conflicts(blk_u, edge_info.vars_v, edge_info.vars_u): 
+                        changed = True
+                        
+                    # Propagar de v hacia u
+                    if blk_u.inherit_conflicts(blk_v, edge_info.vars_u, edge_info.vars_v): 
+                        changed = True
 
     def _prepare_workers(self):
         total_max_possible = 0.0

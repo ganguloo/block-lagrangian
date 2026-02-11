@@ -16,7 +16,7 @@ from src.solvers.integer_lshaped import IntegerLShapedSolver
 from src.solvers.scenario_decomposition import ScenarioDecompositionSolver
 
 # ==================== CONFIGURATION ====================
-OUTPUT_FILE = "benchmark_results_cardinality_star_stable_matching.csv"
+OUTPUT_FILE = "benchmark_results_cardinality_star_stable_set.csv"
 
 INSTANCE_GRID = [
     {"problem": "stable_set", "n_blocks": 15, "n_nodes": 100, "n_edges": 0, "coupling": 20, "topo": "star"},
