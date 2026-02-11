@@ -162,31 +162,56 @@ class ScenarioWorker(threading.Thread):
 class ScenarioDecompositionSolver:
     def __init__(self, topology: TopologyManager, blocks: List[AbstractBlock], rho: float = 1.0):
         self.topology = topology
+        self.blocks = blocks          # <-- 1. Guardar la lista completa
         self.center_block = blocks[0]
         self.leaf_blocks = blocks[1:]
         self.K = len(self.leaf_blocks)
         self.rho = rho
-
+        
+        # --- 2. PROPAGACIÓN DE CONFLICTOS ---
+        # Se ejecuta antes de crear cualquier worker o modelo de Gurobi
+        if all(hasattr(b, 'inherit_conflicts') for b in self.blocks):
+            self._propagate_conflicts()
+            
         self.boundary_indices = set()
         for leaf in self.leaf_blocks:
             edge = self.topology.get_edge(self.center_block.block_id, leaf.block_id)
             self.boundary_indices.update(edge.vars_u)
         self.sorted_boundary_indices = sorted(list(self.boundary_indices))
-
+        
         self.in_queues = [queue.Queue() for _ in range(self.K)]
         self.out_queue = queue.Queue()
         self.workers = []
-
+        
         for k, leaf in enumerate(self.leaf_blocks):
+            # Como propagamos los conflictos antes, center_copy y leaf 
+            # ya tienen la matriz de adyacencia (edges) actualizada.
             center_copy = copy.deepcopy(self.center_block)
             w = ScenarioWorker(
-                k, self.topology, center_copy, leaf, self.K, self.rho,
+                k, self.topology, center_copy, leaf, self.K, self.rho, 
                 self.sorted_boundary_indices, self.in_queues[k], self.out_queue
             )
             w.start()
             self.workers.append(w)
-
+            
         self._apply_lagrangian_bias()
+
+    def _propagate_conflicts(self):
+            print("Pre-procesamiento: Propagando conflictos Stable Set en SD...")
+            changed = True
+            while changed:
+                changed = False
+                for (u_id, v_id), edge_info in self.topology.edges.items():
+                    blk_u = next(b for b in self.blocks if b.block_id == u_id)
+                    blk_v = next(b for b in self.blocks if b.block_id == v_id)
+                    
+                    # Propagar de u hacia v
+                    if blk_v.inherit_conflicts(blk_u, edge_info.vars_v, edge_info.vars_u): 
+                        changed = True
+                        
+                    # Propagar de v hacia u
+                    if blk_u.inherit_conflicts(blk_v, edge_info.vars_u, edge_info.vars_v): 
+                        changed = True
 
     def _broadcast_and_wait(self, cmd, payloads=None):
         if payloads is None:

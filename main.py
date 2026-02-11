@@ -32,8 +32,9 @@ SOLVER_CONFIGS = [
 #    {"name": "Monolithic", "type": "mono", "time_limit": 900},
     {"name": "CRG_VLag", "type": "crg", "class": VLagrangianStrategy, "args": {}, "time_limit": 900},
     {"name": "CRG_MLag_maxdeg2", "type": "crg", "class": MLagrangianStrategy, "args": {}, "time_limit": 900},
+    {"name": "CRG_MLag_maxdeg3", "type": "crg", "class": MLagrangianStrategy, "args": {"maxdeg":3}, "time_limit": 900},
     {"name": "IntegerLShaped", "type": "lshaped", "time_limit": 900},
-#    {"name": "ScenarioDecomp", "type": "scenario", "time_limit": 900},
+    {"name": "ScenarioDecomp", "type": "scenario", "time_limit": 900},
 ]
 # ========================================================
 
