@@ -1,4 +1,3 @@
-
 import gurobipy as gp
 import time
 from typing import List, Dict, Any
@@ -10,7 +9,7 @@ class MonolithicSolver:
         self.topology = topology
         self.blocks = blocks
         self.model = gp.Model("MonolithicProblem")
-        self.model.Params.OutputFlag = 1
+        self.model.Params.OutputFlag = 1 
 
     def build_and_solve(self, time_limit=None, work_limit=None) -> Dict[str, Any]:
         total_obj = gp.LinExpr()
@@ -19,28 +18,33 @@ class MonolithicSolver:
             if hasattr(block, 'local_objective_expr'):
                 total_obj.add(block.local_objective_expr)
 
+        # Agregar restricciones de acople (linking constraints)
         for (u, v), edge_info in self.topology.edges.items():
             block_u = next(b for b in self.blocks if b.block_id == u)
             block_v = next(b for b in self.blocks if b.block_id == v)
+            
+            # Obtener variables usando los índices almacenados en la topología
             vars_u = block_u.get_vars_by_index(edge_info.vars_u)
             vars_v = block_v.get_vars_by_index(edge_info.vars_v)
+            
             for i, (vu, vv) in enumerate(zip(vars_u, vars_v)):
                 self.model.addConstr(vu == vv, name=f"link_{u}_{v}_{i}")
-
+        
         self.model.setObjective(total_obj, gp.GRB.MAXIMIZE)
         self.model.update()
 
         metrics = {
             "root_lp_val": None,
             "root_lp_presolved_val": None,
-            "primal_bound": None,
-            "dual_bound": None,
-            "gap": None,
+            "primal_bound": -float('inf'), # Inicialización segura
+            "dual_bound": float('inf'),
+            "gap": 0.0,
             "node_count": 0,
             "status": "Unknown",
             "total_time": 0.0
         }
 
+        # Intentar obtener cota de la relajación lineal
         try:
             m_copy = self.model.copy()
             m_relax = m_copy.relax()
@@ -64,29 +68,38 @@ class MonolithicSolver:
             self.model.Params.TimeLimit = time_limit
         if work_limit:
             self.model.Params.WorkLimit = work_limit
-
+        
         start_t = time.time()
         self.model.optimize()
         end_t = time.time()
 
         metrics["total_time"] = end_t - start_t
         metrics["node_count"] = self.model.NodeCount
-
+        
         if self.model.SolCount > 0:
             metrics["primal_bound"] = self.model.ObjVal
             metrics["dual_bound"] = self.model.ObjBound
             metrics["gap"] = self.model.MIPGap
-
+        
         if self.model.Status == gp.GRB.OPTIMAL: metrics["status"] = "Optimal"
         elif self.model.Status == gp.GRB.TIME_LIMIT: metrics["status"] = "TimeLimit"
         else: metrics["status"] = f"Code_{self.model.Status}"
 
         return metrics
 
-    def get_block_solution(self, block_id: int) -> List[int]:
-        if self.model.SolCount == 0: return []
+    def get_block_solution(self, block_id: int) -> Dict[Any, int]:
+        """
+        Retorna un diccionario {clave_variable: valor} con la solución entera.
+        Soporta claves de cualquier tipo (int, tuple, str).
+        """
+        if self.model.SolCount == 0: return {}
+        
         block = next(b for b in self.blocks if b.block_id == block_id)
-        vals = []
-        for idx in sorted(block.vars.keys()):
-            vals.append(int(round(block.vars[idx].X)))
+        vals = {}
+        
+        # Iterar directamente sobre el diccionario de variables del bloque
+        for key, var in block.vars.items():
+            # Extraer valor redondeado (0 o 1)
+            vals[key] = int(round(var.X))
+            
         return vals
