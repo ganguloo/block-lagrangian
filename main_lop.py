@@ -140,9 +140,9 @@ def build_lop_instance(topology_type, block_size, overlap, num_blocks):
 
 def run_experiment():
     # Settings
-    BLOCK_SIZE = 15
-    OVERLAP = 5
-    NUM_BLOCKS = 5
+    BLOCK_SIZE = 30
+    OVERLAP = 8
+    NUM_BLOCKS = 15
     TOPOLOGIES = ["Path", "Star", "BinTree"]
 
     for topo_type in TOPOLOGIES:
