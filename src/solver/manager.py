@@ -213,6 +213,9 @@ class CRGManager:
                         stop_outer = True
                         break
 
+                if cols_added_iter == 0:
+                    break
+
                 if metrics["dual_bound"] < float('inf') and current_obj > -float('inf'):
                     denom = abs(metrics["dual_bound"])
                     if denom < 1e-10: denom = 1.0 # Evitar división por cero si el óptimo es 0
