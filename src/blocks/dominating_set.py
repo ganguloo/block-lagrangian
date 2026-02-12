@@ -1,23 +1,43 @@
 import gurobipy as gp
-from typing import List, Tuple
+import numpy as np
+from typing import List, Tuple, Optional
 from .base_block import AbstractBlock
 
 class DominatingSetBlock(AbstractBlock):
-    def __init__(self, block_id: int, global_nodes: List[int], edges: List[Tuple[int, int]]):
+    def __init__(self, block_id: int, num_nodes: int = 0, density: float = 0.2, seed: int = 42, 
+                 global_nodes: Optional[List[int]] = None, edges: Optional[List[Tuple[int, int]]] = None):
         """
-        block_id: ID del bloque.
-        global_nodes: Lista de IDs globales de nodos que pertenecen a este bloque.
-        edges: Lista de aristas (u, v) del subgrafo inducido por global_nodes.
+        Puede inicializarse de dos formas:
+        1. Auto-generación (Benchmark): Pasar num_nodes, density, seed.
+        2. Explícito (Experimentos): Pasar global_nodes y edges.
         """
         super().__init__(block_id, name=f"DomSet_{block_id}")
-        self.global_nodes = sorted(list(set(global_nodes)))
-        self.edges = edges
         
+        if edges is not None:
+            # Modo Explícito
+            self.global_nodes = sorted(list(set(global_nodes)))
+            self.edges = edges
+            self.num_nodes = len(self.global_nodes)
+        else:
+            # Modo Auto-generación (Compatible con main.py)
+            self.num_nodes = num_nodes
+            self.global_nodes = list(range(num_nodes)) # Índices locales 0..N-1
+            self.edges = self._generate_graph(num_nodes, density, seed)
+            
         # Construir lista de adyacencia local
         self.adj = {u: [] for u in self.global_nodes}
         for u, v in self.edges:
             if u in self.adj: self.adj[u].append(v)
             if v in self.adj: self.adj[v].append(u)
+
+    def _generate_graph(self, n, density, seed):
+        rng = np.random.default_rng(seed)
+        edges = []
+        for i in range(n):
+            for j in range(i + 1, n):
+                if rng.random() < density:
+                    edges.append((i, j))
+        return edges
 
     def build_model(self, parent_model: gp.Model = None, prefix: str = None):
         if parent_model:
@@ -36,13 +56,9 @@ class DominatingSetBlock(AbstractBlock):
             self.vars[u] = var
 
         # 2. Restricciones de Dominación
-        # Para CADA nodo u en el bloque, debe estar dominado por él mismo o un vecino.
         # x_u + sum(x_v for v in N(u)) >= 1
         for u in self.global_nodes:
             neighbors = self.adj[u]
-            # Nota: Solo consideramos vecinos que están DENTRO de este bloque.
-            # Esto es una aproximación válida si la topología de bloques cubre el grafo
-            # de manera densa, o si asumimos que la dominación debe satisfacerse localmente.
             expr = gp.LinExpr()
             expr.add(self.vars[u], 1.0)
             for v in neighbors:

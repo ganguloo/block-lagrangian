@@ -1,4 +1,3 @@
-
 import csv
 import gc
 import os
@@ -7,6 +6,7 @@ import datetime
 from typing import List, Dict, Any
 from src.blocks.stable_set import StableSetBlock
 from src.blocks.matching import MatchingBlock
+from src.blocks.dominating_set import DominatingSetBlock  # <--- NUEVO IMPORT
 from src.instance.topology import TopologyManager
 from src.strategies.m_lagrangian import MLagrangianStrategy
 from src.strategies.v_lagrangian import VLagrangianStrategy
@@ -16,14 +16,18 @@ from src.solvers.integer_lshaped import IntegerLShapedSolver
 from src.solvers.scenario_decomposition import ScenarioDecompositionSolver
 
 # ==================== CONFIGURATION ====================
-OUTPUT_FILE = "benchmark_results.csv"
+OUTPUT_FILE = "benchmark_results_dominating_set.csv"
 
 INSTANCE_GRID = [
-    {"problem": "stable_set", "n_blocks": 15, "n_nodes": 100, "n_edges": 0, "coupling": 20, "topo": "star"},
-    {"problem": "stable_set", "n_blocks": 15, "n_nodes": 100, "n_edges": 0, "coupling": 30, "topo": "star"},
-    {"problem": "stable_set", "n_blocks": 15, "n_nodes": 100, "n_edges": 0, "coupling": 40, "topo": "star"},
-#    {"problem": "matching", "n_blocks": 5, "n_nodes": 50, "n_edges": 100, "coupling": 10, "topo": "star"},
-#    {"problem": "matching", "n_blocks": 31, "n_nodes": 20, "n_edges": 200, "coupling": 20, "topo": "bintree"},
+    # Stable Set Cases
+    #{"problem": "stable_set", "n_blocks": 15, "n_nodes": 100, "n_edges": 0, "coupling": 20, "topo": "star"},
+    #{"problem": "stable_set", "n_blocks": 15, "n_nodes": 100, "n_edges": 0, "coupling": 30, "topo": "star"},
+    #{"problem": "stable_set", "n_blocks": 15, "n_nodes": 100, "n_edges": 0, "coupling": 40, "topo": "star"},
+    
+    # Dominating Set Cases (Nuevos)
+    {"problem": "dominating_set", "n_blocks": 7, "n_nodes": 80, "n_edges": 0, "coupling": 20, "topo": "star"},
+    {"problem": "dominating_set", "n_blocks": 7, "n_nodes": 80, "n_edges": 0, "coupling": 20, "topo": "path"},
+    {"problem": "dominating_set", "n_blocks": 7, "n_nodes": 80, "n_edges": 0, "coupling": 20, "topo": "bintree"},
 ]
 
 SEEDS = [i for i in range(5)]
@@ -120,6 +124,11 @@ def run_experiment():
                             b = MatchingBlock(i, n_nodes, n_edges, seed=seed+i)
                             blocks.append(b)
                             block_sizes.append(b.num_edges)
+                        elif problem_type == "dominating_set":  # <--- LOGICA NUEVA
+                            # Densidad por defecto 0.2 para que no sea trivial
+                            b = DominatingSetBlock(i, n_nodes, density=0.2, seed=seed+i)
+                            blocks.append(b)
+                            block_sizes.append(n_nodes)
 
                     topology = TopologyManager(block_sizes)
 
