@@ -208,9 +208,16 @@ class CRGManager:
                     denom = abs(metrics["dual_bound"])
                     if denom < 1e-10: denom = 1.0 # Evitar división por cero si el óptimo es 0
                     metrics["gap"] = abs(metrics["dual_bound"] - metrics["primal_bound"]) / denom
-                    if metrics["gap"] < 1e-4:
+                    if metrics["gap"] < 1e-6:
                         metrics["status"] = "Gap_Closed"
                         stop_outer = True
+                        break
+
+                if metrics["dual_bound"] < float('inf') and current_obj > -float('inf'):
+                    denom = abs(metrics["dual_bound"])
+                    if denom < 1e-10: denom = 1.0 # Evitar división por cero si el óptimo es 0
+                    inner_gap = abs(metrics["dual_bound"] - current_obj) / denom
+                    if inner_gap < 1e-6:
                         break
 
             if metrics["iter_outer"] == 1 and metrics["root_lp_val"] is None:
