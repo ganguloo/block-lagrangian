@@ -241,7 +241,7 @@ class ScenarioDecompositionSolver:
 
     def solve(self, time_limit=300):
         start_time = time.time()
-        best_lb = -1e9
+        best_lb = -float('inf')
 
         metrics = {
             "method": "ScenarioDecomp",
@@ -275,7 +275,7 @@ class ScenarioDecompositionSolver:
                     candidates.append(x_sol)
 
                 if not iteration_feasible:
-                    if best_lb > -1e8:
+                    if best_lb > -float('inf'):
                         metrics["status"] = "Optimal"
                         metrics["gap"] = 0.0
                         metrics["dual_bound"] = best_lb
@@ -309,7 +309,7 @@ class ScenarioDecompositionSolver:
                         metrics["status"] = "Stalled"
 
                     elapsed = time.time() - start_time
-                    if best_lb > -1e8:
+                    if best_lb > -float('inf'):
                         metrics["gap"] = max(0.0, (metrics["dual_bound"] - best_lb) / abs(metrics["dual_bound"]))
                     print(f"  SD Iter {metrics['iter']}: UB {metrics['dual_bound']:.2f}, LB {metrics['primal_bound']:.2f}, Gap {metrics['gap']:.4%} (Elapsed: {elapsed:.2f}s)")
                     break
@@ -337,7 +337,7 @@ class ScenarioDecompositionSolver:
                     self._broadcast_and_wait("ADD_CUT", cut_payloads)
                     evaluated_candidates.add(tuple(sorted(x_cand.items())))
 
-                if best_lb > -1e8:
+                if best_lb > -float('inf'):
                     if metrics["dual_bound"] <= best_lb + 1e-4:
                         metrics["status"] = "Optimal"
                         metrics["gap"] = 0.0
@@ -347,12 +347,11 @@ class ScenarioDecompositionSolver:
                         print(f"  SD Iter {metrics['iter']}: UB {metrics['dual_bound']:.2f} <= LB {metrics['primal_bound']:.2f}, Converged. (Elapsed: {elapsed:.2f}s)")
                         break
 
-                    if metrics["dual_bound"] > 1e-9:
-                        diff = metrics["dual_bound"] - best_lb
-                        if diff < 0: diff = 0
-                        metrics["gap"] = diff / abs(metrics["dual_bound"])
-                    else:
-                        metrics["gap"] = 0.0
+                if metrics["primal_bound"] > -float('inf'):
+                    denom = abs(metrics["dual_bound"])
+                    if denom < 1e-10: denom = 1.0
+                    diff = metrics["dual_bound"] - metrics["primal_bound"]
+                    metrics["gap"] = max(0.0, diff / denom)
 
                 elapsed = time.time() - start_time
                 print(f"  SD Iter {metrics['iter']}: UB {metrics['dual_bound']:.2f}, LB {metrics['primal_bound']:.2f}, Gap {metrics['gap']:.4%} (Elapsed: {elapsed:.2f}s)")

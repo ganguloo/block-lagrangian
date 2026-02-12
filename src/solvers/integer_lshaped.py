@@ -367,8 +367,11 @@ class IntegerLShapedSolver:
         if self.master.SolCount > 0:
             metrics["primal_bound"] = self.master.ObjVal
             metrics["dual_bound"] = self.master.ObjBound
-            metrics["gap"] = self.master.MIPGap
-            
+            if metrics["dual_bound"] < float('inf') and metrics["primal_bound"] > -float('inf'):
+                denom = abs(metrics["dual_bound"])
+                if denom < 1e-10: denom = 1.0
+                metrics["gap"] = abs(metrics["dual_bound"] - metrics["primal_bound"]) / denom
+                        
         if self.master.Status == gp.GRB.OPTIMAL: metrics["status"] = "Optimal"
         elif self.master.Status == gp.GRB.TIME_LIMIT: metrics["status"] = "TimeLimit"
         else: metrics["status"] = f"Code_{self.master.Status}"

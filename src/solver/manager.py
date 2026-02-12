@@ -114,8 +114,8 @@ class CRGManager:
             "cols_added": 0,
             "cuts_added": 0,
             "root_lp_val": None,
-            "primal_bound": 0.0,
-            "dual_bound": 0.0,
+            "primal_bound": -float('inf'),
+            "dual_bound": float('inf'),
             "gap": 0.0
         }
 
@@ -204,9 +204,11 @@ class CRGManager:
                 # Agregado DB al log
                 print(f"  Iter {metrics['iter_total_inner']}: Obj {current_obj:.4f} {star}, DB {metrics['dual_bound']:.4f}, Time {(time.time()-start_total):.1f}s, Cols +{cols_added_iter}")
 
-                if metrics["dual_bound"] > 0 and metrics["primal_bound"] > -1e8:
-                    current_gap = abs(metrics["dual_bound"] - metrics["primal_bound"]) / abs(metrics["dual_bound"])
-                    if current_gap < 1e-4:
+                if metrics["dual_bound"] < float('inf') and metrics["primal_bound"] > -float('inf'):
+                    denom = abs(metrics["dual_bound"])
+                    if denom < 1e-10: denom = 1.0 # Evitar división por cero si el óptimo es 0
+                    metrics["gap"] = abs(metrics["dual_bound"] - metrics["primal_bound"]) / denom
+                    if metrics["gap"] < 1e-4:
                         metrics["status"] = "Gap_Closed"
                         stop_outer = True
                         break
@@ -278,6 +280,8 @@ class CRGManager:
                  print(f"    New Primal Bound found: {metrics['primal_bound']}")
 
         metrics["total_time"] = time.time() - start_total
-        if metrics["dual_bound"] > 0:
-            metrics["gap"] = abs(metrics["dual_bound"] - metrics["primal_bound"]) / abs(metrics["dual_bound"])
+        if metrics["dual_bound"] < float('inf') and metrics["primal_bound"] > -float('inf'):
+            denom = abs(metrics["dual_bound"])
+            if denom < 1e-10: denom = 1.0 # Evitar división por cero si el óptimo es 0
+            metrics["gap"] = abs(metrics["dual_bound"] - metrics["primal_bound"]) / denom
         return metrics
