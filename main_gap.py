@@ -1,24 +1,28 @@
 import sys
 import gurobipy as gp
 from src.instance.topology import TopologyManager
-from src.blocks.assignment import AssignmentBlock  # <--- Importar nuevo bloque
+from src.blocks.assignment import AssignmentBlock
 from src.monolithic.solver import MonolithicSolver
 from src.solver.manager import CRGManager
 from src.strategies.v_lagrangian import VLagrangianStrategy
-from src.instance.gap_generator import generate_gap_instance
+from src.instance.gap_generator import generate_gap_instance 
 
 def run_gap_experiment():
-    # 1. Parámetros
-    M = 5   # Máquinas (Bloques)
-    N = 20  # Trabajos (Tamaño del acople)
+    # --- Configuración ---
+    M = 20     # Máquinas
+    N = 60   # Trabajos (Max 100)
     SEED = 42
+    TYPE = "D" # Probar 'D' (Constant Cap) o 'E' (Variable Cap)
     
-    print(f"Generando GAP con {M} máquinas y {N} trabajos...")
+    print(f"Generando GAP Tipo {TYPE} (Chu & Beasley Original Invertido) con {M} máquinas y {N} trabajos...")
     
-    # 2. Generar Instancia (Copia la función generate_gap_instance aquí o impórtala)
-    capacities, weights_matrix, profits_matrix = generate_gap_instance(M, N, SEED)
+    # 1. Generar Instancia
+    # Esto retornará beneficios negativos.
+    capacities, weights_matrix, profits_matrix = generate_gap_instance(M, N, SEED, instance_type=TYPE)
 
-    # 3. Crear Bloques
+    print(f"  Ejemplo de beneficio p_00: {profits_matrix[0][0]} (Debería ser negativo)")
+
+    # 2. Crear Bloques
     blocks = []
     for i in range(M):
         is_first = (i == 0)
@@ -35,42 +39,36 @@ def run_gap_experiment():
         )
         blocks.append(blk)
 
-    # 4. Definir Topología de Camino (Path) Estricta
-    # Cada bloque expone 2*N variables:
-    #   [0...N-1] -> Entrada (y)
-    #   [N...2N-1] -> Salida (z)
-    # Conectamos z del bloque i con y del bloque i+1
-    
+    # 3. Topología (Z -> Y)
     topology = TopologyManager(block_sizes=2*N) 
-    
-    coupling_size = N
-    indices_out_z = list(range(N, 2*N)) # Salida del anterior
-    indices_in_y  = list(range(0, N))   # Entrada del siguiente
+    indices_out_z = list(range(N, 2*N)) 
+    indices_in_y  = list(range(0, N))   
 
     for i in range(M - 1):
         u, v = i, i+1
-        # IMPORTANTE: topology.add_coupling(u, v, vars_u, vars_v)
         topology.add_coupling(u, v, indices_out_z, indices_in_y)
 
-    print("Topología GAP construida: Cadena de máquinas.")
+    print("Topología construida.")
 
-    # 5. Resolver con Monolítico (para validar)
-    print("\n> Ejecutando Monolítico...")
+    # 4. Monolítico
+    print("\n> [1/2] Ejecutando Monolítico...")
     mono = MonolithicSolver(topology, blocks)
+    # Importante: El Monolítico debe poder manejar objetivos negativos (Gurobi lo hace nativo)
     res_mono = mono.build_and_solve(time_limit=60)
-    print(f"Monolítico: {res_mono['status']}, Obj: {res_mono['primal_bound']}")
+    print(f"Monolítico: Status={res_mono['status']}, Obj={res_mono['primal_bound']}")
 
-    # 6. Resolver con CRG
-    print("\n> Ejecutando CRG...")
-    # Usamos VLagrangianStrategy porque el acople es igualdad binaria (z - y = 0)
-    # y queremos separar cortes sobre combinaciones de valores.
+    # 5. CRG (Column Generation)
+    print("\n> [2/2] Ejecutando CRG...")
     strategy = VLagrangianStrategy() 
-    
     crg = CRGManager(blocks, topology, strategy)
-    res_crg = crg.run(time_limit=120)
-    print(f"CRG: {res_crg['status']}, Dual Bound: {res_crg['dual_bound']}, Primal: {res_crg['primal_bound']}")
+    
+    # Asegúrate de que src/solver/manager.py tenga los fixes de -float('inf')
+    res_crg = crg.run(time_limit=180) 
+    
+    print(f"\nResultados Finales GAP Tipo {TYPE}:")
+    print(f"  CRG Dual Bound:   {res_crg['dual_bound']:.4f}")
+    print(f"  CRG Primal Bound: {res_crg['primal_bound']:.4f}")
+    print(f"  Gap Final:        {res_crg['gap']:.4%}")
 
 if __name__ == "__main__":
-    # Necesitas definir generate_gap_instance o importarla
-    # ... (pegar generate_gap_instance aquí si es un solo archivo)
     run_gap_experiment()
