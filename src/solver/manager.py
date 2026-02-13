@@ -110,6 +110,7 @@ class CRGManager:
             if m_heur.SolCount > 0:
                 if m_heur.ObjVal > metrics["primal_bound"]:
                     metrics["primal_bound"] = m_heur.ObjVal
+                    print("Heuristic solution:", m_heur.ObjVal)
         except: pass
 
     def run(self, time_limit=None) -> Dict[str, Any]:
