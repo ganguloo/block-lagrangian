@@ -12,14 +12,15 @@ class LeafWorker(threading.Thread):
     Patrón Actor: Un Worker persistente que posee sus propios modelos de Gurobi
     y su propio entorno. Escucha comandos por colas y devuelve datos puros de Python.
     """
-    def __init__(self, leaf_idx, leaf_block_copy, var_names, in_q, out_q):
+    def __init__(self, leaf_idx, leaf_block_copy, var_names, in_q, out_q, semaphore):
         super().__init__()
         self.leaf_idx = leaf_idx
         self.leaf_block = leaf_block_copy
         self.var_names = var_names
         self.in_q = in_q
         self.out_q = out_q
-        
+        self.semaphore = semaphore
+
         self.env = None
         self.m_lp = None
         self.m_mip = None
@@ -30,7 +31,7 @@ class LeafWorker(threading.Thread):
         # 1. Entorno Dedicado
         self.env = gp.Env(empty=True)
         self.env.setParam("OutputFlag", 0)
-        self.env.setParam("Threads", 1)
+        self.env.setParam("Threads", 2)
         self.env.start()
         
         # 2. Modelo LP (Benders)
@@ -81,8 +82,9 @@ class LeafWorker(threading.Thread):
                     for c, val in zip(self.link_constrs_lp, payload):
                         c.RHS = val
                         
-                    self.m_lp.optimize()
-                    
+                    with self.semaphore:
+                        self.m_lp.optimize()
+
                     status = self.m_lp.Status
                     obj_val = 0.0
                     duals = []
@@ -101,8 +103,9 @@ class LeafWorker(threading.Thread):
                     for c, val in zip(self.link_constrs_mip, payload):
                         c.RHS = val
                         
-                    self.m_mip.optimize()
-                    
+                    with self.semaphore:
+                        self.m_mip.optimize()
+                   
                     status = self.m_mip.Status
                     obj_val = self.m_mip.ObjVal if status == gp.GRB.OPTIMAL else -1e9
                     self.out_q.put((self.leaf_idx, "MIP", (status, obj_val)))
@@ -130,7 +133,8 @@ class IntegerLShapedSolver:
             self.in_queues = [queue.Queue() for _ in range(self.K)]
             self.out_queue = queue.Queue()
             self.workers = []
-            
+            self.semaphore = threading.Semaphore(16)
+
             # --- PROPAGACIÓN DE CONFLICTOS ---
             if all(hasattr(b, 'inherit_conflicts') for b in self.blocks):
                 self._propagate_conflicts()
@@ -196,7 +200,7 @@ class IntegerLShapedSolver:
             leaf.local_objective_expr = orig_obj
             
             # 3. Levantar Worker Persistente aislado
-            w = LeafWorker(i, leaf_copy, var_names, self.in_queues[i], self.out_queue)
+            w = LeafWorker(i, leaf_copy, var_names, self.in_queues[i], self.out_queue, self.semaphore)
             w.start()
             self.workers.append(w)
             

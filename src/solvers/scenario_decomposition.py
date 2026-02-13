@@ -9,7 +9,7 @@ from ..instance.topology import TopologyManager
 from datetime import datetime
 
 class ScenarioWorker(threading.Thread):
-    def __init__(self, k, topology, center_block_copy, leaf_block, K, rho, boundary_indices, in_q, out_q):
+    def __init__(self, k, topology, center_block_copy, leaf_block, K, rho, boundary_indices, in_q, out_q, semaphore):
         super().__init__()
         self.k = k
         self.topology = topology
@@ -20,6 +20,7 @@ class ScenarioWorker(threading.Thread):
         self.boundary_indices = boundary_indices
         self.in_q = in_q
         self.out_q = out_q
+        self.semaphore = semaphore
 
         self.env = None
         self.model = None
@@ -29,7 +30,7 @@ class ScenarioWorker(threading.Thread):
         # 1. Environment & Model initialization inside the worker thread
         self.env = gp.Env(empty=True)
         self.env.setParam("OutputFlag", 0)
-        self.env.setParam("Threads", 1)
+        self.env.setParam("Threads", 2)
         self.env.start()
         self.model = gp.Model(f"Scenario_{self.k}", env=self.env)
 
@@ -74,7 +75,8 @@ class ScenarioWorker(threading.Thread):
                 elif cmd == "SOLVE_LP":
                     r_model = self.model.relax()
                     r_model.Params.OutputFlag = 0
-                    r_model.optimize()
+                    with self.semaphore:
+                        r_model.optimize()
                     res = {}
                     if r_model.Status == gp.GRB.OPTIMAL:
                         for idx, name in self.scenario_center_var_names.items():
@@ -101,7 +103,8 @@ class ScenarioWorker(threading.Thread):
                     self.out_q.put((self.k, "BIAS_DONE", True))
 
                 elif cmd == "SOLVE_MIP":
-                    self.model.optimize()
+                    with self.semaphore:
+                        self.model.optimize()
                     if self.model.Status == gp.GRB.OPTIMAL:
                         x_sol = {}
                         for idx, name in self.scenario_center_var_names.items():
@@ -122,7 +125,8 @@ class ScenarioWorker(threading.Thread):
                         v.UB = val
 
                     self.model.update()
-                    self.model.optimize()
+                    with self.semaphore:
+                        self.model.optimize()
 
                     val = 0.0
                     feasible = False
@@ -182,14 +186,16 @@ class ScenarioDecompositionSolver:
         self.in_queues = [queue.Queue() for _ in range(self.K)]
         self.out_queue = queue.Queue()
         self.workers = []
-        
+        self.semaphore = threading.Semaphore(16)
+
         for k, leaf in enumerate(self.leaf_blocks):
             # Como propagamos los conflictos antes, center_copy y leaf 
             # ya tienen la matriz de adyacencia (edges) actualizada.
             center_copy = copy.deepcopy(self.center_block)
             w = ScenarioWorker(
                 k, self.topology, center_copy, leaf, self.K, self.rho, 
-                self.sorted_boundary_indices, self.in_queues[k], self.out_queue
+                self.sorted_boundary_indices, self.in_queues[k], self.out_queue,
+                self.semaphore
             )
             w.start()
             self.workers.append(w)

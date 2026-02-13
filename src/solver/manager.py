@@ -229,9 +229,9 @@ class CRGManager:
                     if inner_gap < 1e-6:
                         self.master.solve()
                         break
-                    if math.floor(metrics["dual_bound"] + 1e-6) == math.floor(current_obj + 1e-6):
-                        self.master.solve()
-                        break
+                    #if math.floor(metrics["dual_bound"] + 1e-6) == math.floor(current_obj + 1e-6):
+                    #    self.master.solve()
+                    #    break
 
             if metrics["iter_outer"] == 1 and metrics["root_lp_val"] is None:
                 metrics["root_lp_val"] = metrics["dual_bound"]
