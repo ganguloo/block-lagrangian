@@ -295,7 +295,7 @@ class ScenarioDecompositionSolver:
 
                 metrics["dual_bound"] = current_ub
 
-                if current_ub <= best_lb + 1e-4 or math.floor(current_ub + 1e-6) == math.floor(best_lb + 1e-6):
+                if current_ub <= best_lb + 1e-4:
                     metrics["status"] = "Optimal"
                     metrics["gap"] = 0.0
                     metrics["dual_bound"] = best_lb
@@ -348,7 +348,7 @@ class ScenarioDecompositionSolver:
                     evaluated_candidates.add(tuple(sorted(x_cand.items())))
 
                 if best_lb > -float('inf'):
-                    if metrics["dual_bound"] <= best_lb + 1e-4:
+                    if metrics["dual_bound"] <= best_lb + 1e-4 or math.floor(metrics["dual_bound"] + 1e-6) == math.floor(best_lb + 1e-6):
                         metrics["status"] = "Optimal"
                         metrics["gap"] = 0.0
                         metrics["dual_bound"] = best_lb
