@@ -1,4 +1,5 @@
 import time
+import math # <--- NUEVO
 import gurobipy as gp
 import threading
 import queue
@@ -8,11 +9,7 @@ from ..blocks.base_block import AbstractBlock
 from ..instance.topology import TopologyManager
 
 class LeafWorker(threading.Thread):
-    """
-    Patrón Actor: Un Worker persistente que posee sus propios modelos de Gurobi
-    y su propio entorno. Escucha comandos por colas y devuelve datos puros de Python.
-    """
-    def __init__(self, leaf_idx, leaf_block_copy, var_names, in_q, out_q, semaphore):
+    def __init__(self, leaf_idx, leaf_block_copy, var_names, in_q, out_q, semaphore, num_threads): # <-- Agregar num_threads
         super().__init__()
         self.leaf_idx = leaf_idx
         self.leaf_block = leaf_block_copy
@@ -20,6 +17,7 @@ class LeafWorker(threading.Thread):
         self.in_q = in_q
         self.out_q = out_q
         self.semaphore = semaphore
+        self.num_threads = num_threads # <-- GUARDAR
 
         self.env = None
         self.m_lp = None
@@ -31,7 +29,7 @@ class LeafWorker(threading.Thread):
         # 1. Entorno Dedicado
         self.env = gp.Env(empty=True)
         self.env.setParam("OutputFlag", 0)
-        self.env.setParam("Threads", 2)
+        self.env.setParam("Threads", self.num_threads) # <--- AJUSTE DINÁMICO
         self.env.start()
         
         # 2. Modelo LP (Benders)
@@ -121,7 +119,7 @@ class LeafWorker(threading.Thread):
 class IntegerLShapedSolver:
     def __init__(self, topology: TopologyManager, blocks: List[AbstractBlock]):
             self.topology = topology
-            self.blocks = blocks          # <-- Asegúrate de tener guardado self.blocks
+            self.blocks = blocks          
             self.center_block = blocks[0]
             self.leaf_blocks = blocks[1:]
             
@@ -133,7 +131,11 @@ class IntegerLShapedSolver:
             self.in_queues = [queue.Queue() for _ in range(self.K)]
             self.out_queue = queue.Queue()
             self.workers = []
-            self.semaphore = threading.Semaphore(16)
+            
+            # --- AJUSTE DINÁMICO DE HILOS Y WORKERS ---
+            self.num_workers = min(len(self.blocks), 16)
+            self.num_threads = max(1, math.floor(32 / self.num_workers))
+            self.semaphore = threading.Semaphore(self.num_workers) # <--- ASIGNACIÓN DINÁMICA
 
             # --- PROPAGACIÓN DE CONFLICTOS ---
             if all(hasattr(b, 'inherit_conflicts') for b in self.blocks):
@@ -200,7 +202,7 @@ class IntegerLShapedSolver:
             leaf.local_objective_expr = orig_obj
             
             # 3. Levantar Worker Persistente aislado
-            w = LeafWorker(i, leaf_copy, var_names, self.in_queues[i], self.out_queue, self.semaphore)
+            w = LeafWorker(i, leaf_copy, var_names, self.in_queues[i], self.out_queue, self.semaphore, self.num_threads)
             w.start()
             self.workers.append(w)
             

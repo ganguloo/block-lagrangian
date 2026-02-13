@@ -16,23 +16,24 @@ from src.solvers.integer_lshaped import IntegerLShapedSolver
 from src.solvers.scenario_decomposition import ScenarioDecompositionSolver
 
 # ==================== CONFIGURATION ====================
-OUTPUT_FILE = "benchmark_results_dominating.csv"
+OUTPUT_FILE = "benchmark_results_dominating_b.csv"
 
 INSTANCE_GRID = [
     # Stable Set Cases (Con n_edges explícito. 100 nodos -> max 4950 aristas. 750 aristas ~ 15% densidad)
-    {"problem": "stable_set", "n_blocks": 15, "n_nodes": 100, "n_edges": 750, "coupling": 20, "topo": "star"},
-    {"problem": "stable_set", "n_blocks": 15, "n_nodes": 100, "n_edges": 750, "coupling": 30, "topo": "star"},
-    {"problem": "stable_set", "n_blocks": 15, "n_nodes": 100, "n_edges": 750, "coupling": 40, "topo": "star"},
+    #{"problem": "stable_set", "n_blocks": 15, "n_nodes": 100, "n_edges": 750, "coupling": 20, "topo": "star"},
+    #{"problem": "stable_set", "n_blocks": 15, "n_nodes": 100, "n_edges": 750, "coupling": 30, "topo": "star"},
+    #{"problem": "stable_set", "n_blocks": 15, "n_nodes": 100, "n_edges": 750, "coupling": 40, "topo": "star"},
     
     # Dominating Set Cases (50 nodos -> max 1225 aristas. 250 aristas ~ 20% densidad)
-    {"problem": "dominating_set", "n_blocks": 10, "n_nodes": 50, "n_edges": 250, "coupling": 10, "topo": "path"},
-    {"problem": "dominating_set", "n_blocks": 10, "n_nodes": 50, "n_edges": 250, "coupling": 10, "topo": "star"},
+    {"problem": "dominating_set", "n_blocks": 7, "n_nodes": 80, "n_edges": 320, "coupling": 20, "topo": "star"},
+    {"problem": "dominating_set", "n_blocks": 7, "n_nodes": 80, "n_edges": 320, "coupling": 20, "topo": "path"},
+    {"problem": "dominating_set", "n_blocks": 7, "n_nodes": 80, "n_edges": 320, "coupling": 20, "topo": "bintree"},
 ]
 
-SEEDS = [i for i in range(5)]
+SEEDS = [i for i in range(3)]
 
 SOLVER_CONFIGS = [
-    {"name": "Monolithic", "type": "mono", "time_limit": 900},
+    #{"name": "Monolithic", "type": "mono", "time_limit": 900},
     {"name": "CRG_VLag", "type": "crg", "class": VLagrangianStrategy, "args": {}, "time_limit": 900},
     {"name": "IntegerLShaped", "type": "lshaped", "time_limit": 900},
     {"name": "ScenarioDecomp", "type": "scenario", "time_limit": 900},
@@ -107,7 +108,7 @@ def run_experiment():
                         print(f"  > Skipping {solver_conf['name']} (Topology not supported)")
                         continue
 
-                    print(f"  > Running {solver_conf['name']}...")
+                    print(datetime.datetime.now().isoformat() + f"  > Running {solver_conf['name']}...")
                     gc.collect()
 
                     blocks = []

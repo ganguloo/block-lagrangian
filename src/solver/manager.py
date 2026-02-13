@@ -16,10 +16,18 @@ class CRGManager:
         self.strategy = strategy
         self.master = MasterProblem(len(blocks))
         self.master.register_linear_constraints(topology)
-        self.pricers = [PricingSolver(b, strategy, topology) for b in blocks]
+        
+        # --- AJUSTE DINÁMICO DE HILOS Y WORKERS ---
+        self.num_workers = min(len(self.blocks), 16)
+        self.num_threads = math.floor(32 / self.num_workers)
+        
+        # Pasar num_threads a los pricers
+        self.pricers = [PricingSolver(b, strategy, topology, self.num_threads) for b in blocks]
         self.cut_registry = {}
         self.active_cuts_by_edge = {}
-        self.executor = concurrent.futures.ThreadPoolExecutor(max_workers=16)
+        
+        # Limitar ThreadPoolExecutor
+        self.executor = concurrent.futures.ThreadPoolExecutor(max_workers=self.num_workers)
         self.initial_dual_bound = float('inf')
 
     def _propagate_conflicts(self):

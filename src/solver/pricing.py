@@ -1,19 +1,19 @@
-
 import gurobipy as gp
 from typing import Dict, Tuple, List, Any
 
 class PricingSolver:
-    def __init__(self, block, strategy, topology):
+    def __init__(self, block, strategy, topology, num_threads: int = 2):
         self.block = block
         self.strategy = strategy
         self.topology = topology
+        self.num_threads = num_threads # <--- NUEVO
         self.rebuild_model()
 
     def rebuild_model(self):
         self.block.build_model()
         self.model = self.block.model
         self.model.Params.NonConvex = 2
-        self.model.Params.Threads = 2
+        self.model.Params.Threads = self.num_threads # <--- ASIGNACIÓN DINÁMICA
         self.boundary_vars = {}
         for nid in self.topology.get_neighbors(self.block.block_id):
             u, v = sorted((self.block.block_id, nid))
