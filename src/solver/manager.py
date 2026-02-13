@@ -1,4 +1,5 @@
 import time
+import math
 import gurobipy as gp
 import concurrent.futures
 from datetime import datetime
@@ -212,6 +213,11 @@ class CRGManager:
                         metrics["status"] = "Gap_Closed"
                         stop_outer = True
                         break
+                    if math.floor(metrics["dual_bound"] + 1e-6) == math.floor(metrics["primal_bound"] + 1e-6):
+                        metrics["status"] = "Integer_Gap_Closed"
+                        stop_outer = True
+                        self.master.solve()
+                        break
 
                 if cols_added_iter == 0:
                     break
@@ -221,6 +227,10 @@ class CRGManager:
                     if denom < 1e-10: denom = 1.0 # Evitar división por cero si el óptimo es 0
                     inner_gap = abs(metrics["dual_bound"] - current_obj) / denom
                     if inner_gap < 1e-6:
+                        self.master.solve()
+                        break
+                    if math.floor(metrics["dual_bound"] + 1e-6) == math.floor(current_obj + 1e-6):
+                        self.master.solve()
                         break
 
             if metrics["iter_outer"] == 1 and metrics["root_lp_val"] is None:
