@@ -4,11 +4,11 @@ from typing import List, Tuple, Optional
 from .base_block import AbstractBlock
 
 class DominatingSetBlock(AbstractBlock):
-    def __init__(self, block_id: int, num_nodes: int = 0, density: float = 0.2, seed: int = 42, 
+    def __init__(self, block_id: int, num_nodes: int = 0, num_edges: int = 0, seed: int = 42, 
                  global_nodes: Optional[List[int]] = None, edges: Optional[List[Tuple[int, int]]] = None):
         """
         Puede inicializarse de dos formas:
-        1. Auto-generación (Benchmark): Pasar num_nodes, density, seed.
+        1. Auto-generación (Benchmark): Pasar num_nodes, num_edges, seed.
         2. Explícito (Experimentos): Pasar global_nodes y edges.
         """
         super().__init__(block_id, name=f"DomSet_{block_id}")
@@ -21,8 +21,8 @@ class DominatingSetBlock(AbstractBlock):
         else:
             # Modo Auto-generación (Compatible con main.py)
             self.num_nodes = num_nodes
-            self.global_nodes = list(range(num_nodes)) # Índices locales 0..N-1
-            self.edges = self._generate_graph(num_nodes, density, seed)
+            self.global_nodes = list(range(num_nodes)) 
+            self.edges = self._generate_graph(num_nodes, num_edges, seed)
             
         # Construir lista de adyacencia local
         self.adj = {u: [] for u in self.global_nodes}
@@ -30,13 +30,16 @@ class DominatingSetBlock(AbstractBlock):
             if u in self.adj: self.adj[u].append(v)
             if v in self.adj: self.adj[v].append(u)
 
-    def _generate_graph(self, n, density, seed):
+    def _generate_graph(self, n, m, seed):
         rng = np.random.default_rng(seed)
+        all_pairs = [(i, j) for i in range(n) for j in range(i + 1, n)]
+        
+        actual_m = min(m, len(all_pairs))
         edges = []
-        for i in range(n):
-            for j in range(i + 1, n):
-                if rng.random() < density:
-                    edges.append((i, j))
+        if actual_m > 0:
+            indices = rng.choice(len(all_pairs), size=actual_m, replace=False)
+            edges = [all_pairs[i] for i in indices]
+            
         return edges
 
     def build_model(self, parent_model: gp.Model = None, prefix: str = None):
@@ -56,7 +59,6 @@ class DominatingSetBlock(AbstractBlock):
             self.vars[u] = var
 
         # 2. Restricciones de Dominación
-        # x_u + sum(x_v for v in N(u)) >= 1
         for u in self.global_nodes:
             neighbors = self.adj[u]
             expr = gp.LinExpr()
@@ -67,7 +69,6 @@ class DominatingSetBlock(AbstractBlock):
             self.model.addConstr(expr >= 1, name=f"dom_{u}")
 
         # 3. Función Objetivo
-        # Minimizar Cardinalidad <=> Maximizar Sum(-1 * x_u)
         self.local_objective_expr = gp.LinExpr()
         for var in self.vars.values():
             self.local_objective_expr.add(var, -1.0)

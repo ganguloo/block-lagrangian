@@ -1,36 +1,37 @@
-
 import gurobipy as gp
 import numpy as np
 from typing import List, Tuple, Dict, Set
 from .base_block import AbstractBlock
 
 class StableSetBlock(AbstractBlock):
-    def __init__(self, block_id: int, num_nodes: int, density: float = 0.15,
+    def __init__(self, block_id: int, num_nodes: int, num_edges: int, 
                  seed: int = 42, weights: List[float] = None):
         super().__init__(block_id, name=f"StableSet_{block_id}")
         self.num_nodes = num_nodes
-        rng = np.random.default_rng(seed + block_id)
-        density = rng.uniform(0.1, 0.15)
-        self.edges = self._generate_graph(num_nodes, density, seed + block_id)
+        self.edges = self._generate_graph(num_nodes, num_edges, seed + block_id)
         self.edge_set: Set[Tuple[int, int]] = set(tuple(sorted(e)) for e in self.edges)
-
+        
         rng = np.random.default_rng(seed + block_id)
         if weights is None:
             self.weights = [1 for _ in range(num_nodes)] #list(rng.integers(1, 11, size=num_nodes))
         else:
             self.weights = weights
 
-    def _generate_graph(self, n, p, seed):
+    def _generate_graph(self, n, m, seed):
         rng = np.random.default_rng(seed)
-        edges = []
         all_pairs = [(i, j) for i in range(n) for j in range(i + 1, n)]
-        num_edges = int(np.ceil(p * len(all_pairs)))
-        if num_edges > 0:
-            indices = rng.choice(len(all_pairs), size=num_edges, replace=False)
+        
+        # Limitar la cantidad máxima de arcos al grafo completo
+        actual_m = min(m, len(all_pairs))
+        edges = []
+        if actual_m > 0:
+            # Muestreo uniforme de arcos sin reemplazo
+            indices = rng.choice(len(all_pairs), size=actual_m, replace=False)
             edges = [all_pairs[i] for i in indices]
+            
         return edges
 
-    def inherit_conflicts(self, neighbor: 'StableSetBlock',
+    def inherit_conflicts(self, neighbor: 'StableSetBlock', 
                           my_indices: List[int], neighbor_indices: List[int]) -> bool:
         neigh_to_me = {n_idx: m_idx for m_idx, n_idx in zip(my_indices, neighbor_indices)}
         changed = False
