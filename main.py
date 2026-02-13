@@ -93,6 +93,7 @@ def run_experiment():
         writer = csv.DictWriter(f, fieldnames=fieldnames)
         if not file_exists:
             writer.writeheader()
+            f.flush()
 
         for inst_conf in INSTANCE_GRID:
             for seed in SEEDS:
