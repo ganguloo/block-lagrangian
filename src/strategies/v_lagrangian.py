@@ -4,17 +4,47 @@ from typing import List, Dict, Tuple, Any
 from .base_strategy import SeparationStrategy
 
 class VLagrangianStrategy(SeparationStrategy):
+    def __init__(self, radius: int = 0):
+        """
+        Estrategia V-Lagrangian Generalizada.
+        :param radius: Radio de la bola de Hamming.
+                       0 = Coincidencia exacta (V-Lag clásico).
+                       >0 = Coincidencia difusa (Cluster).
+        """
+        self.radius = radius
+
     def get_w_signature(self, x_values: List[int]) -> Tuple:
         return tuple(x_values)
 
+    def _hamming_distance(self, s1, s2):
+        return sum(1 for a, b in zip(s1, s2) if a != b)
+
     def separate(self, w_sol_u: Dict[Tuple, float], w_sol_v: Dict[Tuple, float]) -> List[Tuple]:
+        """
+        Identifica violaciones sumando masas en bolas de Hamming.
+        """
         violations = set()
-        all_sigs = set(w_sol_u.keys()) | set(w_sol_v.keys())
-        for sig in all_sigs:
-            val_u = w_sol_u.get(sig, 0.0)
-            val_v = w_sol_v.get(sig, 0.0)
-            if abs(val_u - val_v) > 1e-5:
-                violations.add(sig)
+        all_signatures = set(w_sol_u.keys()) | set(w_sol_v.keys())
+        
+        for sig_center in all_signatures:
+            val_u = 0.0
+            val_v = 0.0
+            
+            # Sumar masas de configuraciones dentro del radio R
+            for sig_other in all_signatures:
+                # Optimización para R=0
+                if self.radius == 0:
+                    if sig_other == sig_center:
+                        val_u += w_sol_u.get(sig_other, 0.0)
+                        val_v += w_sol_v.get(sig_other, 0.0)
+                else:
+                    if self._hamming_distance(sig_other, sig_center) <= self.radius:
+                        val_u += w_sol_u.get(sig_other, 0.0)
+                        val_v += w_sol_v.get(sig_other, 0.0)
+            
+            if abs(val_u - val_v) > 1e-4:
+                violations.add(sig_center)
+                
         return list(violations)
 
     def apply_pricing_penalty(self, model: gp.Model, vars_list: List[gp.Var],
@@ -37,10 +67,18 @@ class VLagrangianStrategy(SeparationStrategy):
                         delta_expr.add(vars_list[i], -1.0)
                     else:
                         delta_expr.add(vars_list[i], 1.0)
-                model.addConstr(delta_expr <= n * (1 - w_var), name=f"H_le_{w_name}")
-                model.addConstr(delta_expr >= 1 - w_var, name=f"H_ge_{w_name}")
+                model.addConstr(delta_expr <= n * (1 - w_var) + self.radius*w_var, name=f"H_le_{w_name}")
+                model.addConstr(delta_expr >= (self.radius + 1)*(1-w_var), name=f"H_ge_{w_name}")
             penalty_expr.add(w_var, coeff)
         return penalty_expr
 
     def evaluate_cut(self, column_signature: Tuple, cut_signature: Any) -> float:
-        return 1.0 if column_signature == cut_signature else 0.0
+        """
+        Evalúa si una columna (patrón) cae dentro del corte (bola).
+        Usado por el Maestro para calcular coeficientes de la columna.
+        """
+        if self.radius == 0:
+            return 1.0 if column_signature == cut_signature else 0.0
+        
+        dist = self._hamming_distance(column_signature, cut_signature)
+        return 1.0 if dist <= self.radius else 0.0
