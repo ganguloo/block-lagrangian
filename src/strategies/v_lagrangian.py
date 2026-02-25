@@ -2,16 +2,17 @@
 import gurobipy as gp
 from typing import List, Dict, Tuple, Any
 from .base_strategy import SeparationStrategy
+import math
 
 class VLagrangianStrategy(SeparationStrategy):
-    def __init__(self, radius: int = 0):
+    def __init__(self, radius_factor: float = 0.0):
         """
         Estrategia V-Lagrangian Generalizada.
         :param radius: Radio de la bola de Hamming.
                        0 = Coincidencia exacta (V-Lag clásico).
                        >0 = Coincidencia difusa (Cluster).
         """
-        self.radius = radius
+        self.radius_factor = radius_factor
 
     def get_w_signature(self, x_values: List[int]) -> Tuple:
         return tuple(x_values)
@@ -25,7 +26,7 @@ class VLagrangianStrategy(SeparationStrategy):
         """
         violations = set()
         all_signatures = set(w_sol_u.keys()) | set(w_sol_v.keys())
-        
+      
         for sig_center in all_signatures:
             val_u = 0.0
             val_v = 0.0
@@ -33,12 +34,12 @@ class VLagrangianStrategy(SeparationStrategy):
             # Sumar masas de configuraciones dentro del radio R
             for sig_other in all_signatures:
                 # Optimización para R=0
-                if self.radius == 0:
+                if self.radius_factor == 0:
                     if sig_other == sig_center:
                         val_u += w_sol_u.get(sig_other, 0.0)
                         val_v += w_sol_v.get(sig_other, 0.0)
                 else:
-                    if self._hamming_distance(sig_other, sig_center) <= self.radius:
+                    if self._hamming_distance(sig_other, sig_center) <= math.floor(self.radius_factor*len(sig_center)):
                         val_u += w_sol_u.get(sig_other, 0.0)
                         val_v += w_sol_v.get(sig_other, 0.0)
             
@@ -61,14 +62,15 @@ class VLagrangianStrategy(SeparationStrategy):
                 w_var = model.addVar(vtype=gp.GRB.BINARY, name=w_name)
                 delta_expr = gp.LinExpr()
                 n = len(signature)
+                radius = math.floor(self.radius_factor*n)
                 for i, bit in enumerate(signature):
                     if bit == 1:
                         delta_expr.addConstant(1.0)
                         delta_expr.add(vars_list[i], -1.0)
                     else:
                         delta_expr.add(vars_list[i], 1.0)
-                model.addConstr(delta_expr <= n * (1 - w_var) + self.radius*w_var, name=f"H_le_{w_name}")
-                model.addConstr(delta_expr >= (self.radius + 1)*(1-w_var), name=f"H_ge_{w_name}")
+                model.addConstr(delta_expr <= n * (1 - w_var) + radius*w_var, name=f"H_le_{w_name}")
+                model.addConstr(delta_expr >= (radius + 1)*(1-w_var), name=f"H_ge_{w_name}")
             penalty_expr.add(w_var, coeff)
         return penalty_expr
 
@@ -77,8 +79,8 @@ class VLagrangianStrategy(SeparationStrategy):
         Evalúa si una columna (patrón) cae dentro del corte (bola).
         Usado por el Maestro para calcular coeficientes de la columna.
         """
-        if self.radius == 0:
+        if self.radius_factor == 0:
             return 1.0 if column_signature == cut_signature else 0.0
         
         dist = self._hamming_distance(column_signature, cut_signature)
-        return 1.0 if dist <= self.radius else 0.0
+        return 1.0 if dist <= math.floor(self.radius_factor*len(column_signature)) else 0.0
