@@ -12,9 +12,6 @@ class MLagrangianStrategy(SeparationStrategy):
         self.max_cuts = max_cuts
         self.tol = tol
 
-    def get_w_signature(self, x_values: List[int]) -> Tuple:
-        return tuple(x_values)
-
     def separate(self, w_sol_u: Dict[Tuple, float], w_sol_v: Dict[Tuple, float]) -> List[Tuple[Tuple[int, ...], int]]:
         if not w_sol_u and not w_sol_v: return []
         first_sig = next(iter(w_sol_u)) if w_sol_u else next(iter(w_sol_v))

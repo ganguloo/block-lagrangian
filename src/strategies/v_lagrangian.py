@@ -14,9 +14,6 @@ class VLagrangianStrategy(SeparationStrategy):
         """
         self.radius_factor = radius_factor
 
-    def get_w_signature(self, x_values: List[int]) -> Tuple:
-        return tuple(x_values)
-
     def _hamming_distance(self, s1, s2):
         return sum(1 for a, b in zip(s1, s2) if a != b)
 

@@ -10,20 +10,24 @@ from src.blocks.dominating_set import DominatingSetBlock
 from src.instance.topology import TopologyManager
 from src.strategies.m_lagrangian import MLagrangianStrategy
 from src.strategies.v_lagrangian import VLagrangianStrategy
+from src.strategies.exact_m_lagrangian import ExactMLagrangianStrategy
 from src.solver.manager import CRGManager
 from src.monolithic.solver import MonolithicSolver
 from src.solvers.integer_lshaped import IntegerLShapedSolver
 from src.solvers.scenario_decomposition import ScenarioDecompositionSolver
 
 # ==================== CONFIGURATION ====================
-OUTPUT_FILE = "benchmark_results_dominating_set_n100_m500.csv"
+OUTPUT_FILE = "benchmark_results_test.csv"
 
 INSTANCE_GRID = [
     # Stable Set Cases (Con n_edges explícito. 100 nodos -> max 4950 aristas. 750 aristas ~ 15% densidad)
     #{"problem": "stable_set", "n_blocks": 15, "n_nodes": 100, "n_edges": 750, "coupling": 20, "topo": "star"},
     #{"problem": "stable_set", "n_blocks": 15, "n_nodes": 100, "n_edges": 750, "coupling": 30, "topo": "star"},
     #{"problem": "stable_set", "n_blocks": 15, "n_nodes": 100, "n_edges": 750, "coupling": 40, "topo": "star"},
-    
+    #{"problem": "stable_set", "n_blocks": 7, "n_nodes": 80, "n_edges": 320, "coupling": 20, "topo": "star"},
+    #{"problem": "stable_set", "n_blocks": 7, "n_nodes": 80, "n_edges": 320, "coupling": 20, "topo": "path"},
+    #{"problem": "stable_set", "n_blocks": 7, "n_nodes": 80, "n_edges": 320, "coupling": 20, "topo": "bintree"},
+
     # Dominating Set Cases (50 nodos -> max 1225 aristas. 250 aristas ~ 20% densidad)
     #{"problem": "dominating_set", "n_blocks": 7, "n_nodes": 80, "n_edges": 320, "coupling": 20, "topo": "star"},
     #{"problem": "dominating_set", "n_blocks": 7, "n_nodes": 80, "n_edges": 320, "coupling": 20, "topo": "path"},
@@ -31,26 +35,36 @@ INSTANCE_GRID = [
     #{"problem": "dominating_set", "n_blocks": 7, "n_nodes": 80, "n_edges": 320, "coupling": 30, "topo": "star"},
     #{"problem": "dominating_set", "n_blocks": 7, "n_nodes": 80, "n_edges": 320, "coupling": 30, "topo": "path"},
     #{"problem": "dominating_set", "n_blocks": 7, "n_nodes": 80, "n_edges": 320, "coupling": 30, "topo": "bintree"},
-    {"problem": "dominating_set", "n_blocks": 7, "n_nodes": 100, "n_edges": 500, "coupling": 20, "topo": "star"},
-    {"problem": "dominating_set", "n_blocks": 7, "n_nodes": 100, "n_edges": 500, "coupling": 20, "topo": "path"},
-    {"problem": "dominating_set", "n_blocks": 7, "n_nodes": 100, "n_edges": 500, "coupling": 20, "topo": "bintree"},
-    {"problem": "dominating_set", "n_blocks": 7, "n_nodes": 100, "n_edges": 500, "coupling": 30, "topo": "star"},
-    {"problem": "dominating_set", "n_blocks": 7, "n_nodes": 100, "n_edges": 500, "coupling": 30, "topo": "path"},
-    {"problem": "dominating_set", "n_blocks": 7, "n_nodes": 100, "n_edges": 500, "coupling": 30, "topo": "bintree"},
-    {"problem": "dominating_set", "n_blocks": 7, "n_nodes": 100, "n_edges": 500, "coupling": 40, "topo": "star"},
-    {"problem": "dominating_set", "n_blocks": 7, "n_nodes": 100, "n_edges": 500, "coupling": 40, "topo": "path"},
-    {"problem": "dominating_set", "n_blocks": 7, "n_nodes": 100, "n_edges": 500, "coupling": 40, "topo": "bintree"},
+    {"problem": "stable_set", "n_blocks": 15, "n_nodes": 100, "n_edges": 500, "coupling": 20, "topo": "star"},
+    {"problem": "stable_set", "n_blocks": 15, "n_nodes": 100, "n_edges": 500, "coupling": 20, "topo": "path"},
+    {"problem": "stable_set", "n_blocks": 15, "n_nodes": 100, "n_edges": 500, "coupling": 20, "topo": "bintree"},
+    {"problem": "stable_set", "n_blocks": 15, "n_nodes": 100, "n_edges": 500, "coupling": 30, "topo": "star"},
+    {"problem": "stable_set", "n_blocks": 15, "n_nodes": 100, "n_edges": 500, "coupling": 30, "topo": "path"},
+    {"problem": "stable_set", "n_blocks": 15, "n_nodes": 100, "n_edges": 500, "coupling": 30, "topo": "bintree"},
+    {"problem": "stable_set", "n_blocks": 15, "n_nodes": 100, "n_edges": 500, "coupling": 40, "topo": "star"},
+    {"problem": "stable_set", "n_blocks": 15, "n_nodes": 100, "n_edges": 500, "coupling": 40, "topo": "path"},
+    {"problem": "stable_set", "n_blocks": 15, "n_nodes": 100, "n_edges": 500, "coupling": 40, "topo": "bintree"},
+    {"problem": "dominating_set", "n_blocks": 15, "n_nodes": 100, "n_edges": 500, "coupling": 20, "topo": "star"},
+    {"problem": "dominating_set", "n_blocks": 15, "n_nodes": 100, "n_edges": 500, "coupling": 20, "topo": "path"},
+    {"problem": "dominating_set", "n_blocks": 15, "n_nodes": 100, "n_edges": 500, "coupling": 20, "topo": "bintree"},
+    {"problem": "dominating_set", "n_blocks": 15, "n_nodes": 100, "n_edges": 500, "coupling": 30, "topo": "star"},
+    {"problem": "dominating_set", "n_blocks": 15, "n_nodes": 100, "n_edges": 500, "coupling": 30, "topo": "path"},
+    {"problem": "dominating_set", "n_blocks": 15, "n_nodes": 100, "n_edges": 500, "coupling": 30, "topo": "bintree"},
+    {"problem": "dominating_set", "n_blocks": 15, "n_nodes": 100, "n_edges": 500, "coupling": 40, "topo": "star"},
+    {"problem": "dominating_set", "n_blocks": 15, "n_nodes": 100, "n_edges": 500, "coupling": 40, "topo": "path"},
+    {"problem": "dominating_set", "n_blocks": 15, "n_nodes": 100, "n_edges": 500, "coupling": 40, "topo": "bintree"},
 ]
 
 SEEDS = [i for i in range(5)]
 
 SOLVER_CONFIGS = [
-    {"name": "Monolithic", "type": "mono", "time_limit": 900},
-    {"name": "CRG_VLag", "type": "crg", "class": VLagrangianStrategy, "args": {}, "time_limit": 900},
-    {"name": "CRG_MLag-2", "type": "crg", "class": MLagrangianStrategy, "args": {}, "time_limit": 900},
-    {"name": "CRG_MLag-3", "type": "crg", "class": MLagrangianStrategy, "args": {"maxdeg":3}, "time_limit": 900},
-    {"name": "IntegerLShaped", "type": "lshaped", "time_limit": 900},
-    {"name": "ScenarioDecomp", "type": "scenario", "time_limit": 900},
+    #{"name": "Monolithic", "type": "mono", "time_limit": 1800},
+    #{"name": "CRG_VLag", "type": "crg", "class": VLagrangianStrategy, "args": {}, "time_limit": 900},
+    {"name": "CRG_ExactMLag", "type": "crg", "class": ExactMLagrangianStrategy, "args": {}, "time_limit": 1800},
+    #{"name": "CRG_MLag-2", "type": "crg", "class": MLagrangianStrategy, "args": {}, "time_limit": 1800},
+    #{"name": "CRG_MLag-3", "type": "crg", "class": MLagrangianStrategy, "args": {"maxdeg":3}, "time_limit": 1800},
+    #{"name": "IntegerLShaped", "type": "lshaped", "time_limit": 1800},
+    #{"name": "ScenarioDecomp", "type": "scenario", "time_limit": 1800},
 ]
 # ========================================================
 

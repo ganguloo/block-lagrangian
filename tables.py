@@ -61,60 +61,63 @@ def generate_latex_report(csv_file):
     latex_output += "\\end{itemize}\n\n"
 
     # 2. Generar las tablas por topología
+    problems = df['problem'].unique()
+
     topologies = df['topo'].unique()
 
-    for topo in topologies:
-        # Filtrar y agrupar
-        df_topo = df[df['topo'] == topo]
-        df_grouped = df_topo.groupby(group_cols)[avg_cols].mean().reset_index()
+    for problem in problems:
+        for topo in topologies:
+            # Filtrar y agrupar
+            df_topo = df[(df['problem'] == problem) & (df['topo'] == topo)]
+            df_grouped = df_topo.groupby(group_cols)[avg_cols].mean().reset_index()
 
-        latex_output += f"% Table for topology: {topo}\n"
-        latex_output += "\\begin{table}[ht]\n"
-        latex_output += "\\small  % Small font size as requested\n"
-        latex_output += "\\centering\n"
-        latex_output += "\\caption{Average results for " + str(topo) + " topology}\n"
+            latex_output += f"% Table for topology: {topo}\n"
+            latex_output += "\\begin{table}[ht]\n"
+            latex_output += "\\small  % Small font size as requested\n"
+            latex_output += "\\centering\n"
+            latex_output += "\\caption{Average results for " + str(problem) + " with " + str(topo) + " topology}\n"
 
-        # Definición de columnas: todas alineadas a la derecha ('r')
-        num_cols = len(df_grouped.columns)
-        col_alignment = "r" * num_cols
-        latex_output += "\\begin{tabular}{" + col_alignment + "}\n"
-        latex_output += "\\hline\n"
+            # Definición de columnas: todas alineadas a la derecha ('r')
+            num_cols = len(df_grouped.columns)
+            col_alignment = "r" * num_cols
+            latex_output += "\\begin{tabular}{" + col_alignment + "}\n"
+            latex_output += "\\hline\n"
 
-        # Encabezados
-        headers = [col_map.get(c, c) for c in df_grouped.columns]
-        latex_output += " & ".join(headers) + " \\\\\n"
-        latex_output += "\\hline\n"
+            # Encabezados
+            headers = [col_map.get(c, c) for c in df_grouped.columns]
+            latex_output += " & ".join(headers) + " \\\\\n"
+            latex_output += "\\hline\n"
 
-        # Filas de datos
-        for _, row in df_grouped.iterrows():
-            row_str = []
-            for col in df_grouped.columns:
-                val = row[col]
+            # Filas de datos
+            for _, row in df_grouped.iterrows():
+                row_str = []
+                for col in df_grouped.columns:
+                    val = row[col]
 
-                # Ajuste de porcentaje para el GAP
-                if col == 'gap' and not pd.isna(val):
-                    val = val * 100
+                    # Ajuste de porcentaje para el GAP
+                    if col == 'gap' and not pd.isna(val):
+                        val = val * 100
 
-                # Formateo de valores
-                if pd.isna(val):
-                    row_str.append("-")
-                elif col in ['n_blocks', 'n_nodes', 'coupling']:
-                    row_str.append(str(int(val)))
-                elif col == 'solver':
-                    # Escapar guiones bajos para LaTeX
-                    row_str.append(str(val).replace('_', r'\_'))
-                elif col in ['iter_outer', 'cuts', 'iter_inner', 'cols']:
-                    # 1 decimal para conteos promedio
-                    row_str.append(f"{val:.1f}")
-                else:
-                    # Time y Gap con 2 decimales
-                    row_str.append(f"{val:.2f}")
+                    # Formateo de valores
+                    if pd.isna(val):
+                        row_str.append("-")
+                    elif col in ['n_blocks', 'n_nodes', 'coupling']:
+                        row_str.append(str(int(val)))
+                    elif col == 'solver':
+                        # Escapar guiones bajos para LaTeX
+                        row_str.append(str(val).replace('_', r'\_'))
+                    elif col in ['iter_outer', 'cuts', 'iter_inner', 'cols']:
+                        # 1 decimal para conteos promedio
+                        row_str.append(f"{val:.1f}")
+                    else:
+                        # Time y Gap con 2 decimales
+                        row_str.append(f"{val:.2f}")
 
-            latex_output += " & ".join(row_str) + " \\\\\n"
+                latex_output += " & ".join(row_str) + " \\\\\n"
 
-        latex_output += "\\hline\n"
-        latex_output += "\\end{tabular}\n"
-        latex_output += "\\end{table}\n\n"
+            latex_output += "\\hline\n"
+            latex_output += "\\end{tabular}\n"
+            latex_output += "\\end{table}\n\n"
 
     return latex_output
 
