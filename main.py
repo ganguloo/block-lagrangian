@@ -11,13 +11,14 @@ from src.instance.topology import TopologyManager
 from src.strategies.m_lagrangian import MLagrangianStrategy
 from src.strategies.v_lagrangian import VLagrangianStrategy
 from src.strategies.exact_m_lagrangian import ExactMLagrangianStrategy
+from src.strategies.generalized_m_lagrangian import GeneralizedMLagrangianStrategy
 from src.solver.manager import CRGManager
 from src.monolithic.solver import MonolithicSolver
 from src.solvers.integer_lshaped import IntegerLShapedSolver
 from src.solvers.scenario_decomposition import ScenarioDecompositionSolver
 
 # ==================== CONFIGURATION ====================
-OUTPUT_FILE = "benchmark_results_dominating_set_n100_m500_b15.csv"
+OUTPUT_FILE = "benchmark_results_all_n100_m500_b15.csv"
 
 INSTANCE_GRID = [
     # Stable Set Cases (Con n_edges explícito. 100 nodos -> max 4950 aristas. 750 aristas ~ 15% densidad)
@@ -60,8 +61,9 @@ SEEDS = [i for i in range(5)]
 SOLVER_CONFIGS = [
     #{"name": "Monolithic", "type": "mono", "time_limit": 1800},
     #{"name": "CRG_VLag", "type": "crg", "class": VLagrangianStrategy, "args": {}, "time_limit": 1800},
-    {"name": "CRG_ExactMLag", "type": "crg", "class": ExactMLagrangianStrategy, "args": {}, "time_limit": 1800},
-    {"name": "CRG_MLag-2-tol-6", "type": "crg", "class": MLagrangianStrategy, "args": {"tol":1e-6}, "time_limit": 1800},
+    #{"name": "CRG_ExactMLag", "type": "crg", "class": ExactMLagrangianStrategy, "args": {}, "time_limit": 1800},
+    {"name": "CRG_GeneralMLag", "type": "crg", "class": GeneralizedMLagrangianStrategy, "args": {}, "time_limit": 1800},
+    #{"name": "CRG_MLag-2-tol-6", "type": "crg", "class": MLagrangianStrategy, "args": {"tol":1e-6}, "time_limit": 1800},
     #{"name": "CRG_MLag-3", "type": "crg", "class": MLagrangianStrategy, "args": {"maxdeg":3}, "time_limit": 1800},
     #{"name": "IntegerLShaped", "type": "lshaped", "time_limit": 1800},
     #{"name": "ScenarioDecomp", "type": "scenario", "time_limit": 1800},
