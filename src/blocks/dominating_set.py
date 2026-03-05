@@ -5,13 +5,10 @@ from .base_block import AbstractBlock
 
 class DominatingSetBlock(AbstractBlock):
     def __init__(self, block_id: int, num_nodes: int = 0, num_edges: int = 0, seed: int = 42, 
-                 global_nodes: Optional[List[int]] = None, edges: Optional[List[Tuple[int, int]]] = None):
-        """
-        Puede inicializarse de dos formas:
-        1. Auto-generación (Benchmark): Pasar num_nodes, num_edges, seed.
-        2. Explícito (Experimentos): Pasar global_nodes y edges.
-        """
-        super().__init__(block_id, name=f"DomSet_{block_id}")
+                 global_nodes: Optional[List[int]] = None, edges: Optional[List[Tuple[int, int]]] = None,
+                 obj_factor: float = 1.0):
+        
+        super().__init__(block_id, name=f"DomSet_{block_id}", obj_factor=obj_factor)
         
         if edges is not None:
             # Modo Explícito
@@ -71,7 +68,7 @@ class DominatingSetBlock(AbstractBlock):
         # 3. Función Objetivo
         self.local_objective_expr = gp.LinExpr()
         for var in self.vars.values():
-            self.local_objective_expr.add(var, -1.0)
+            self.local_objective_expr.add(var, -1.0 * self.obj_factor)
 
         if parent_model is None:
             self.model.setObjective(self.local_objective_expr, gp.GRB.MAXIMIZE)

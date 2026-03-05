@@ -1,12 +1,12 @@
-
 from abc import ABC, abstractmethod
 from typing import List, Dict, Any, Optional
 import gurobipy as gp
 
 class AbstractBlock(ABC):
-    def __init__(self, block_id: int, name: str = ""):
+    def __init__(self, block_id: int, name: str = "", obj_factor: float = 1.0):
         self.block_id = block_id
         self.name = name
+        self.obj_factor = obj_factor
         self.model: Optional[gp.Model] = None
         self.vars: Dict[int, gp.Var] = {}
         self.local_objective_expr: Optional[gp.LinExpr] = None

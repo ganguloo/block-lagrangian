@@ -5,8 +5,9 @@ from .base_block import AbstractBlock
 
 class StableSetBlock(AbstractBlock):
     def __init__(self, block_id: int, num_nodes: int, num_edges: int, 
-                 seed: int = 42, weights: List[float] = None):
-        super().__init__(block_id, name=f"StableSet_{block_id}")
+                    seed: int = 42, weights: List[float] = None, obj_factor: float = 1.0):
+        
+        super().__init__(block_id, name=f"StableSet_{block_id}", obj_factor=obj_factor)
         self.num_nodes = num_nodes
         self.edges = self._generate_graph(num_nodes, num_edges, seed + block_id)
         self.edge_set: Set[Tuple[int, int]] = set(tuple(sorted(e)) for e in self.edges)
@@ -65,7 +66,7 @@ class StableSetBlock(AbstractBlock):
 
         self.local_objective_expr = gp.LinExpr()
         for i in range(self.num_nodes):
-            self.local_objective_expr.add(self.vars[i], self.weights[i])
+            self.local_objective_expr.add(self.vars[i], self.obj_factor * self.weights[i])
 
         if parent_model is None:
             self.model.setObjective(self.local_objective_expr, gp.GRB.MAXIMIZE)

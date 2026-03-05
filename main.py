@@ -3,6 +3,7 @@ import gc
 import os
 import platform
 import datetime
+import math
 from typing import List, Dict, Any
 from src.blocks.stable_set import StableSetBlock
 from src.blocks.matching import MatchingBlock
@@ -19,7 +20,7 @@ from src.solvers.integer_lshaped import IntegerLShapedSolver
 from src.solvers.scenario_decomposition import ScenarioDecompositionSolver
 
 # ==================== CONFIGURATION ====================
-OUTPUT_FILE = "benchmark_results_all_n100_m500_b15.csv"
+OUTPUT_FILE = "benchmark_results_stoch_n100_m500_b15.csv"
 
 INSTANCE_GRID = [
     # Stable Set Cases (Con n_edges explícito. 100 nodos -> max 4950 aristas. 750 aristas ~ 15% densidad)
@@ -37,37 +38,39 @@ INSTANCE_GRID = [
     #{"problem": "dominating_set", "n_blocks": 7, "n_nodes": 80, "n_edges": 320, "coupling": 30, "topo": "star"},
     #{"problem": "dominating_set", "n_blocks": 7, "n_nodes": 80, "n_edges": 320, "coupling": 30, "topo": "path"},
     #{"problem": "dominating_set", "n_blocks": 7, "n_nodes": 80, "n_edges": 320, "coupling": 30, "topo": "bintree"},
-    {"problem": "stable_set", "n_blocks": 15, "n_nodes": 100, "n_edges": 500, "coupling": 20, "topo": "star"},
-    {"problem": "stable_set", "n_blocks": 15, "n_nodes": 100, "n_edges": 500, "coupling": 20, "topo": "path"},
-    {"problem": "stable_set", "n_blocks": 15, "n_nodes": 100, "n_edges": 500, "coupling": 20, "topo": "bintree"},
-    {"problem": "stable_set", "n_blocks": 15, "n_nodes": 100, "n_edges": 500, "coupling": 30, "topo": "star"},
-    {"problem": "stable_set", "n_blocks": 15, "n_nodes": 100, "n_edges": 500, "coupling": 30, "topo": "path"},
-    {"problem": "stable_set", "n_blocks": 15, "n_nodes": 100, "n_edges": 500, "coupling": 30, "topo": "bintree"},
-    {"problem": "stable_set", "n_blocks": 15, "n_nodes": 100, "n_edges": 500, "coupling": 40, "topo": "star"},
-    {"problem": "stable_set", "n_blocks": 15, "n_nodes": 100, "n_edges": 500, "coupling": 40, "topo": "path"},
-    {"problem": "stable_set", "n_blocks": 15, "n_nodes": 100, "n_edges": 500, "coupling": 40, "topo": "bintree"},
-    {"problem": "dominating_set", "n_blocks": 15, "n_nodes": 100, "n_edges": 500, "coupling": 20, "topo": "star"},
-    {"problem": "dominating_set", "n_blocks": 15, "n_nodes": 100, "n_edges": 500, "coupling": 20, "topo": "path"},
-    {"problem": "dominating_set", "n_blocks": 15, "n_nodes": 100, "n_edges": 500, "coupling": 20, "topo": "bintree"},
-    {"problem": "dominating_set", "n_blocks": 15, "n_nodes": 100, "n_edges": 500, "coupling": 30, "topo": "star"},
-    {"problem": "dominating_set", "n_blocks": 15, "n_nodes": 100, "n_edges": 500, "coupling": 30, "topo": "path"},
-    {"problem": "dominating_set", "n_blocks": 15, "n_nodes": 100, "n_edges": 500, "coupling": 30, "topo": "bintree"},
-    {"problem": "dominating_set", "n_blocks": 15, "n_nodes": 100, "n_edges": 500, "coupling": 40, "topo": "star"},
-    {"problem": "dominating_set", "n_blocks": 15, "n_nodes": 100, "n_edges": 500, "coupling": 40, "topo": "path"},
-    {"problem": "dominating_set", "n_blocks": 15, "n_nodes": 100, "n_edges": 500, "coupling": 40, "topo": "bintree"},
+    
+    {"problem": "stable_set", "n_blocks": 15, "n_nodes": 100, "n_edges": 500, "coupling": 20, "topo": "star", "stochastic": True},
+    #{"problem": "stable_set", "n_blocks": 15, "n_nodes": 100, "n_edges": 500, "coupling": 20, "topo": "path"},
+    {"problem": "stable_set", "n_blocks": 15, "n_nodes": 100, "n_edges": 500, "coupling": 20, "topo": "bintree", "stochastic": True},
+    {"problem": "stable_set", "n_blocks": 15, "n_nodes": 100, "n_edges": 500, "coupling": 30, "topo": "star", "stochastic": True},
+    #{"problem": "stable_set", "n_blocks": 15, "n_nodes": 100, "n_edges": 500, "coupling": 30, "topo": "path"},
+    {"problem": "stable_set", "n_blocks": 15, "n_nodes": 100, "n_edges": 500, "coupling": 30, "topo": "bintree", "stochastic": True},
+    {"problem": "stable_set", "n_blocks": 15, "n_nodes": 100, "n_edges": 500, "coupling": 40, "topo": "star", "stochastic": True},
+    #{"problem": "stable_set", "n_blocks": 15, "n_nodes": 100, "n_edges": 500, "coupling": 40, "topo": "path"},
+    {"problem": "stable_set", "n_blocks": 15, "n_nodes": 100, "n_edges": 500, "coupling": 40, "topo": "bintree", "stochastic": True},
+    
+    {"problem": "dominating_set", "n_blocks": 15, "n_nodes": 100, "n_edges": 500, "coupling": 20, "topo": "star", "stochastic": True},
+    #{"problem": "dominating_set", "n_blocks": 15, "n_nodes": 100, "n_edges": 500, "coupling": 20, "topo": "path"},
+    {"problem": "dominating_set", "n_blocks": 15, "n_nodes": 100, "n_edges": 500, "coupling": 20, "topo": "bintree", "stochastic": True},
+    {"problem": "dominating_set", "n_blocks": 15, "n_nodes": 100, "n_edges": 500, "coupling": 30, "topo": "star", "stochastic": True},
+    #{"problem": "dominating_set", "n_blocks": 15, "n_nodes": 100, "n_edges": 500, "coupling": 30, "topo": "path"},
+    {"problem": "dominating_set", "n_blocks": 15, "n_nodes": 100, "n_edges": 500, "coupling": 30, "topo": "bintree", "stochastic": True},
+    {"problem": "dominating_set", "n_blocks": 15, "n_nodes": 100, "n_edges": 500, "coupling": 40, "topo": "star", "stochastic": True},
+    #{"problem": "dominating_set", "n_blocks": 15, "n_nodes": 100, "n_edges": 500, "coupling": 40, "topo": "path"},
+    {"problem": "dominating_set", "n_blocks": 15, "n_nodes": 100, "n_edges": 500, "coupling": 40, "topo": "bintree", "stochastic": True},
 ]
 
-SEEDS = [i for i in range(5)]
+SEEDS = [i for i in range(1)]
 
 SOLVER_CONFIGS = [
     #{"name": "Monolithic", "type": "mono", "time_limit": 1800},
-    #{"name": "CRG_VLag", "type": "crg", "class": VLagrangianStrategy, "args": {}, "time_limit": 1800},
-    #{"name": "CRG_ExactMLag", "type": "crg", "class": ExactMLagrangianStrategy, "args": {}, "time_limit": 1800},
-    {"name": "CRG_ReflectMLag", "type": "crg", "class": ReflectedMLagrangianStrategy, "args": {}, "time_limit": 1800},
+    {"name": "CRG_VLag", "type": "crg", "class": VLagrangianStrategy, "args": {}, "time_limit": 1800},
+    {"name": "CRG_ExactMLag", "type": "crg", "class": ExactMLagrangianStrategy, "args": {}, "time_limit": 1800},
+    #{"name": "CRG_ReflectMLag", "type": "crg", "class": ReflectedMLagrangianStrategy, "args": {}, "time_limit": 1800},
     #{"name": "CRG_MLag-2-tol-6", "type": "crg", "class": MLagrangianStrategy, "args": {"tol":1e-6}, "time_limit": 1800},
     #{"name": "CRG_MLag-3", "type": "crg", "class": MLagrangianStrategy, "args": {"maxdeg":3}, "time_limit": 1800},
-    #{"name": "IntegerLShaped", "type": "lshaped", "time_limit": 1800},
-    #{"name": "ScenarioDecomp", "type": "scenario", "time_limit": 1800},
+    {"name": "IntegerLShaped", "type": "lshaped", "time_limit": 1800},
+    {"name": "ScenarioDecomp", "type": "scenario", "time_limit": 1800},
 ]
 # ========================================================
 
@@ -85,6 +88,7 @@ def get_completed_runs():
                         int(row["n_nodes"]),
                         int(row.get("n_edges", 0)),
                         int(row["coupling"]),
+                        row["stochastic"],
                         int(row["seed"]),
                         row["solver"]
                     )
@@ -98,7 +102,7 @@ def run_experiment():
     completed_runs = get_completed_runs()
 
     fieldnames = [
-        "timestamp", "host", "cpu", "problem", "topo", "n_blocks", "n_nodes", "n_edges", "coupling",
+        "timestamp", "host", "cpu", "problem", "topo", "n_blocks", "n_nodes", "n_edges", "coupling", "stochastic",
         "seed", "solver", "status", "total_time", "primal_bound", "dual_bound", "gap",
         "root_lp", "root_lp_presolved", "node_count", "iter_outer", "iter_inner", "cols", "cuts",
         "t_master", "t_pricing"
@@ -120,6 +124,7 @@ def run_experiment():
                 coupling = inst_conf["coupling"]
                 topo_type = inst_conf["topo"]
                 n_edges = inst_conf.get("n_edges", 0)
+                is_stochastic = inst_conf.get("stochastic", False)
 
                 # Limitar cantidad de arcos al máximo posible del grafo para cualquier problema de grafos
                 if problem_type in ["matching", "stable_set", "dominating_set"]:
@@ -127,10 +132,10 @@ def run_experiment():
                     if n_edges > max_possible:
                         n_edges = max_possible
 
-                print(f"\n>>> Processing Instance: {problem_type}, {topo_type}, {n_blocks} blocks, {n_nodes} nodes, {n_edges} edges, {coupling} couplings, Seed {seed}")
+                print(f"\n>>> Processing Instance: {problem_type}, {topo_type}, {n_blocks} blocks, {n_nodes} nodes, {n_edges} edges, {coupling} couplings, stochastic {is_stochastic}, Seed {seed}")
 
                 for solver_conf in SOLVER_CONFIGS:
-                    run_key = (problem_type, topo_type, n_blocks, n_nodes, n_edges, coupling, seed, solver_conf["name"])
+                    run_key = (problem_type, topo_type, n_blocks, n_nodes, n_edges, coupling, str(is_stochastic), seed, solver_conf["name"])
 
                     if run_key in completed_runs:
                         print(f"  > Skipping {solver_conf['name']} (Already done)")
@@ -147,18 +152,27 @@ def run_experiment():
                     block_sizes = []
 
                     for i in range(n_blocks):
+                        obj_factor = 1.0
+                        if is_stochastic:
+                            if topo_type == "star":
+                                # Centro (0) tiene prob 1. Hojas tienen prob 1 / (N-1)
+                                obj_factor = n_blocks - 1 if i == 0 else 1.0
+                            elif topo_type == "bintree":
+                                # Deducir etapa t (1-indexada). Raíz i=0 -> t=1. Hijos i=1,2 -> t=2.
+                                stages = int(math.log2(n_blocks + 1))
+                                t = math.floor(math.log2(i + 1)) + 1
+                                obj_factor = 2 ** (stages - t)
+
                         if problem_type == "stable_set":
-                            # Ahora es obligatorio pasar n_edges
-                            b = StableSetBlock(i, n_nodes, num_edges=n_edges, seed=seed+i)
+                            b = StableSetBlock(i, n_nodes, num_edges=n_edges, seed=seed+i, obj_factor=obj_factor)
                             blocks.append(b)
                             block_sizes.append(n_nodes)
                         elif problem_type == "matching":
-                            b = MatchingBlock(i, n_nodes, num_edges=n_edges, seed=seed+i)
+                            b = MatchingBlock(i, n_nodes, num_edges=n_edges, seed=seed+i, probability=obj_factor)
                             blocks.append(b)
                             block_sizes.append(b.num_edges)
                         elif problem_type == "dominating_set":  
-                            # Ahora es obligatorio pasar n_edges
-                            b = DominatingSetBlock(i, n_nodes, num_edges=n_edges, seed=seed+i)
+                            b = DominatingSetBlock(i, n_nodes, num_edges=n_edges, seed=seed+i, obj_factor=obj_factor)
                             blocks.append(b)
                             block_sizes.append(n_nodes)
 
@@ -181,6 +195,7 @@ def run_experiment():
                         "n_nodes": n_nodes,
                         "n_edges": n_edges,
                         "coupling": coupling,
+                        "stochastic": is_stochastic,
                         "seed": seed,
                         "solver": solver_conf["name"]
                     }
