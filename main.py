@@ -60,14 +60,14 @@ INSTANCE_GRID = [
     {"problem": "dominating_set", "n_blocks": 15, "n_nodes": 100, "n_edges": 500, "coupling": 40, "topo": "bintree", "stochastic": True},
 ]
 
-SEEDS = [i for i in range(1)]
+SEEDS = [i for i in range(5)]
 
 SOLVER_CONFIGS = [
-    #{"name": "Monolithic", "type": "mono", "time_limit": 1800},
+    {"name": "Monolithic", "type": "mono", "time_limit": 1800},
     {"name": "CRG_VLag", "type": "crg", "class": VLagrangianStrategy, "args": {}, "time_limit": 1800},
     {"name": "CRG_ExactMLag", "type": "crg", "class": ExactMLagrangianStrategy, "args": {}, "time_limit": 1800},
     #{"name": "CRG_ReflectMLag", "type": "crg", "class": ReflectedMLagrangianStrategy, "args": {}, "time_limit": 1800},
-    #{"name": "CRG_MLag-2-tol-6", "type": "crg", "class": MLagrangianStrategy, "args": {"tol":1e-6}, "time_limit": 1800},
+    {"name": "CRG_MLag-2-tol-6", "type": "crg", "class": MLagrangianStrategy, "args": {"tol":1e-6}, "time_limit": 1800},
     #{"name": "CRG_MLag-3", "type": "crg", "class": MLagrangianStrategy, "args": {"maxdeg":3}, "time_limit": 1800},
     {"name": "IntegerLShaped", "type": "lshaped", "time_limit": 1800},
     {"name": "ScenarioDecomp", "type": "scenario", "time_limit": 1800},
