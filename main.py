@@ -20,7 +20,7 @@ from src.solvers.integer_lshaped import IntegerLShapedSolver
 from src.solvers.scenario_decomposition import ScenarioDecompositionSolver
 
 # ==================== CONFIGURATION ====================
-OUTPUT_FILE = "test_main.csv"
+OUTPUT_FILE = "benchmark_results_stoch_n100_m500_b15.csv"
 
 INSTANCE_GRID = [
     # Stable Set Cases (Con n_edges explícito. 100 nodos -> max 4950 aristas. 750 aristas ~ 15% densidad)
@@ -67,7 +67,7 @@ SOLVER_CONFIGS = [
     {"name": "CRG_VLag", "type": "crg", "class": VLagrangianStrategy, "args": {}, "time_limit": 1800},
     {"name": "CRG_ExactMLag", "type": "crg", "class": ExactMLagrangianStrategy, "args": {}, "time_limit": 1800},
     #{"name": "CRG_ReflectMLag", "type": "crg", "class": ReflectedMLagrangianStrategy, "args": {}, "time_limit": 1800},
-    {"name": "CRG_MLag-2-tol-6", "type": "crg", "class": MLagrangianStrategy, "args": {"tol":1e-6}, "time_limit": 1800},
+    #{"name": "CRG_MLag-2-tol-6", "type": "crg", "class": MLagrangianStrategy, "args": {"tol":1e-6}, "time_limit": 1800},
     #{"name": "CRG_MLag-3", "type": "crg", "class": MLagrangianStrategy, "args": {"maxdeg":3}, "time_limit": 1800},
     {"name": "IntegerLShaped", "type": "lshaped", "time_limit": 1800},
     {"name": "ScenarioDecomp", "type": "scenario", "time_limit": 1800},
