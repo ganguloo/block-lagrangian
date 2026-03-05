@@ -3,10 +3,8 @@ from typing import List, Dict, Tuple, Any
 import gurobipy as gp
 
 class SeparationStrategy(ABC):
-    """
-    Clase base abstracta para estrategias de separación (Corte).
-    Define la interfaz que CRGManager espera.
-    """
+    def __init__(self, single_threaded: bool = False):
+        self.single_threaded = single_threaded
 
     def get_w_signature(self, x_values: List[int]) -> Tuple[int, ...]:
         """

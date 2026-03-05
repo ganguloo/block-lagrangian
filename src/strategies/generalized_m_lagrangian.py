@@ -3,14 +3,8 @@ from typing import List, Dict, Tuple, Any
 from .base_strategy import SeparationStrategy
 
 class GeneralizedMLagrangianStrategy(SeparationStrategy):
-    def __init__(self, tolerance: float = 1e-6, factor: float = 0.5):
-        """
-        Estrategia M-Lagrangian Generalizada.
-        
-        Permite buscar discrepancias en asignaciones parciales exactas,
-        es decir, subconjuntos S+ (variables que deben ser 1) y 
-        S- (variables que deben ser 0).
-        """
+    def __init__(self, tolerance: float = 1e-6, factor: float = 0.5, single_threaded: bool = False):
+        super().__init__(single_threaded=single_threaded)
         self.tolerance = tolerance
         self.factor = factor
 

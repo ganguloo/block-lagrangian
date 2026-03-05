@@ -3,12 +3,8 @@ from typing import List, Dict, Tuple, Any
 from .base_strategy import SeparationStrategy
 
 class ExactMLagrangianStrategy(SeparationStrategy):
-    def __init__(self, tolerance: float = 1e-6, factor: float = 0.5):
-        """
-        Estrategia M-Lagrangian Exacta usando separación MIP.
-        
-        :param max_cuts_per_side: Número de cortes a extraer del pool de soluciones del MIP.
-        """
+    def __init__(self, tolerance: float = 1e-6, factor: float = 0.5, single_threaded: bool = False):
+        super().__init__(single_threaded=single_threaded)
         self.tolerance = tolerance
         self.factor = factor
 

@@ -5,11 +5,14 @@ from ..instance.topology import TopologyManager
 from ..blocks.base_block import AbstractBlock
 
 class MonolithicSolver:
-    def __init__(self, topology: TopologyManager, blocks: List[AbstractBlock]):
+    def __init__(self, topology: TopologyManager, blocks: List[AbstractBlock], single_threaded: bool = False):
         self.topology = topology
         self.blocks = blocks
         self.model = gp.Model("MonolithicProblem")
         self.model.Params.OutputFlag = 1 
+
+        if single_threaded:
+            self.model.Params.Threads = 1
 
     def build_and_solve(self, time_limit=None, work_limit=None) -> Dict[str, Any]:
         total_obj = gp.LinExpr()
@@ -55,7 +58,9 @@ class MonolithicSolver:
         except: pass
 
         try:
+            self.model.Params.OutputFlag = 0 # Apagar temporalmente
             m_pre = self.model.presolve()
+            self.model.Params.OutputFlag = 1 # Volver a encender
             if m_pre:
                 m_pre_relax = m_pre.relax()
                 m_pre_relax.Params.OutputFlag = 0

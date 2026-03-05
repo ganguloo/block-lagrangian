@@ -5,13 +5,8 @@ from .base_strategy import SeparationStrategy
 import math
 
 class VLagrangianStrategy(SeparationStrategy):
-    def __init__(self, radius_factor: float = 0.0):
-        """
-        Estrategia V-Lagrangian Generalizada.
-        :param radius: Radio de la bola de Hamming.
-                       0 = Coincidencia exacta (V-Lag clásico).
-                       >0 = Coincidencia difusa (Cluster).
-        """
+    def __init__(self, radius_factor: float = 0.0, single_threaded: bool = False):
+        super().__init__(single_threaded=single_threaded)
         self.radius_factor = radius_factor
 
     def _hamming_distance(self, s1, s2):

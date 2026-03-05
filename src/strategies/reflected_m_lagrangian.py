@@ -3,16 +3,8 @@ from typing import List, Dict, Tuple, Any
 from .base_strategy import SeparationStrategy
 
 class ReflectedMLagrangianStrategy(SeparationStrategy):
-    def __init__(self, tolerance: float = 1e-6, factor: float = 0.5):
-        """
-        Estrategia Reflected M-Lagrangian Exacta.
-        
-        Busca subconjuntos S donde la discrepancia se da en las variables 
-        que deben ser estrictamente 0 (w_S = Producto de (1 - x_p)).
-        
-        :param tolerance: Umbral de tolerancia para el MIP.
-        :param factor: Factor para determinar cuántas soluciones extraer del pool.
-        """
+    def __init__(self, tolerance: float = 1e-6, factor: float = 0.5, single_threaded: bool = False):
+        super().__init__(single_threaded=single_threaded)
         self.tolerance = tolerance
         self.factor = factor
 

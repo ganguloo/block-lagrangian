@@ -10,16 +10,21 @@ from ..solver.pricing import PricingSolver
 from ..monolithic.solver import MonolithicSolver
 
 class CRGManager:
-    def __init__(self, blocks, topology, strategy):
+    def __init__(self, blocks, topology, strategy, single_threaded: bool = False):
         self.blocks = blocks
         self.topology = topology
         self.strategy = strategy
+        self.single_threaded = single_threaded
+
         self.master = MasterProblem(len(blocks))
         self.master.register_linear_constraints(topology)
         
-        # --- AJUSTE DINÁMICO DE HILOS Y WORKERS ---
-        self.num_workers = min(len(self.blocks), 16)
-        self.num_threads = math.floor(32 / self.num_workers)
+        if self.single_threaded:
+            self.num_workers = 1
+            self.num_threads = 1
+        else:
+            self.num_workers = min(len(self.blocks), 16)
+            self.num_threads = max(1, math.floor(32 / self.num_workers))
         
         # Pasar num_threads a los pricers
         self.pricers = [PricingSolver(b, strategy, topology, self.num_threads) for b in blocks]

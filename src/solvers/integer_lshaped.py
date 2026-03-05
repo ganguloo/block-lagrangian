@@ -117,7 +117,7 @@ class LeafWorker(threading.Thread):
 
 
 class IntegerLShapedSolver:
-    def __init__(self, topology: TopologyManager, blocks: List[AbstractBlock]):
+    def __init__(self, topology: TopologyManager, blocks: List[AbstractBlock], single_threaded: bool = False):
             self.topology = topology
             self.blocks = blocks          
             self.center_block = blocks[0]
@@ -131,10 +131,16 @@ class IntegerLShapedSolver:
             self.in_queues = [queue.Queue() for _ in range(self.K)]
             self.out_queue = queue.Queue()
             self.workers = []
+            self.single_threaded = single_threaded
             
             # --- AJUSTE DINÁMICO DE HILOS Y WORKERS ---
-            self.num_workers = min(len(self.blocks), 16)
-            self.num_threads = max(1, math.floor(32 / self.num_workers))
+            if self.single_threaded:
+                self.num_workers = 1
+                self.num_threads = 1
+            else:
+                self.num_workers = min(len(self.blocks), 16)
+                self.num_threads = max(1, math.floor(32 / self.num_workers))
+                
             self.semaphore = threading.Semaphore(self.num_workers) # <--- ASIGNACIÓN DINÁMICA
 
             # --- PROPAGACIÓN DE CONFLICTOS ---

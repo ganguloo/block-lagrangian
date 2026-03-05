@@ -5,7 +5,8 @@ from itertools import combinations
 from .base_strategy import SeparationStrategy
 
 class MLagrangianStrategy(SeparationStrategy):
-    def __init__(self, mindeg=2, maxdeg=2, factor=1.0, max_cuts=50, tol=1e-4):
+    def __init__(self, mindeg=2, maxdeg=2, factor=1.0, max_cuts=50, tol=1e-4, single_threaded: bool = False):
+        super().__init__(single_threaded=single_threaded)
         self.mindeg = mindeg
         self.maxdeg = maxdeg
         self.factor = factor
