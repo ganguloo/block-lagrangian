@@ -6,6 +6,7 @@ import platform
 import datetime
 import math
 import traceback
+import contextlib
 import concurrent.futures
 from typing import List, Dict, Any
 
@@ -26,7 +27,7 @@ from src.solvers.scenario_decomposition import ScenarioDecompositionSolver
 import gurobipy as gp
 
 # ==================== CONFIGURATION ====================
-OUTPUT_FILE = "test_main_main.csv"
+OUTPUT_FILE = "test.csv"
 
 INSTANCE_GRID = [
     {"problem": "stable_set", "n_blocks": 15, "n_nodes": 100, "n_edges": 500, "coupling": 20, "topo": "star", "stochastic": True},
@@ -77,18 +78,17 @@ def get_completed_runs():
             except: pass
     return completed
 
-def run_single_experiment(inst_conf, seed, solver_conf, single_threaded):
-    """
-    Función unificada que ejecuta un job. 
-    Se adapta a single_threaded o multi_threaded dependiendo de los argumentos.
-    """
-    if single_threaded:
-        gp.setParam('Threads', 1)
-        gp.setParam('OutputFlag', 0)
-    else:
-        gp.setParam('Threads', 0) # 0 le dice a Gurobi que use todos los núcleos disponibles
-        gp.setParam('OutputFlag', 1)
+class AutoFlushFile:
+    """ Wrapper que fuerza a que cada print se escriba al disco duro inmediatamente """
+    def __init__(self, f):
+        self.f = f
+    def write(self, x):
+        self.f.write(x)
+        self.f.flush()
+    def flush(self):
+        self.f.flush()
 
+def run_single_experiment(inst_conf, seed, solver_conf, single_threaded, logdir):
     problem_type = inst_conf["problem"]
     n_blocks = inst_conf["n_blocks"]
     n_nodes = inst_conf["n_nodes"]
@@ -117,115 +117,154 @@ def run_single_experiment(inst_conf, seed, solver_conf, single_threaded):
         "solver": solver_conf["name"]
     }
 
-    try:
-        blocks = []
-        block_sizes = []
+    # 1. CONSTRUCCIÓN DEL NOMBRE DE ARCHIVO
+    safe_solver_name = solver_conf["name"].replace(" ", "_").replace("/", "_")
+    log_filename = f"{problem_type}_{topo_type}_b{n_blocks}_n{n_nodes}_m{n_edges}_c{coupling}_stoch{is_stochastic}_s{seed}_{safe_solver_name}.log"
+    log_filepath = os.path.join(logdir, log_filename)
 
-        for i in range(n_blocks):
-            obj_factor = 1.0
-            if is_stochastic:
-                if topo_type == "star":
-                    obj_factor = n_blocks - 1 if i == 0 else 1.0
+    # 2. TRUNCAR EL ARCHIVO Y ESCRIBIR EL ENCABEZADO DE PYTHON (Para evitar que Gurobi lo pise)
+    with open(log_filepath, 'w') as f:
+        f.write("============================================================\n")
+        f.write(f"STARTING JOB: {log_filename}\n")
+        f.write(f"Timestamp: {row['timestamp']}\n")
+        f.write(f"Single Threaded Mode: {single_threaded}\n")
+        f.write("============================================================\n\n")
+        f.flush()
+
+    # 3. REDIRECCIONAR GUROBI DIRECTO AL ARCHIVO
+    gp.setParam('OutputFlag', 1)        # Habilitar output
+    gp.setParam('LogToConsole', 0)      # Apagarlo en la consola global
+    gp.setParam('LogFile', log_filepath)# Escribir el log de Gurobi aquí
+    
+    if single_threaded:
+        gp.setParam('Threads', 1)
+    else:
+        gp.setParam('Threads', 0)
+
+    # 4. REDIRECCIONAR PYTHON PRINTS (usando el AutoFlushFile)
+    with open(log_filepath, 'a') as log_file:
+        flushed_log = AutoFlushFile(log_file)
+        with contextlib.redirect_stdout(flushed_log), contextlib.redirect_stderr(flushed_log):
+            try:
+                blocks = []
+                block_sizes = []
+
+                for i in range(n_blocks):
+                    obj_factor = 1.0
+                    if is_stochastic:
+                        if topo_type == "star":
+                            obj_factor = n_blocks - 1 if i == 0 else 1.0
+                        elif topo_type == "bintree":
+                            stages = int(math.log2(n_blocks + 1))
+                            t = math.floor(math.log2(i + 1)) + 1
+                            obj_factor = 2 ** (stages - t)
+
+                    if problem_type == "stable_set":
+                        b = StableSetBlock(i, n_nodes, num_edges=n_edges, seed=seed+i, obj_factor=obj_factor)
+                    elif problem_type == "matching":
+                        b = MatchingBlock(i, n_nodes, num_edges=n_edges, seed=seed+i, probability=obj_factor)
+                    elif problem_type == "dominating_set":  
+                        b = DominatingSetBlock(i, n_nodes, num_edges=n_edges, seed=seed+i, obj_factor=obj_factor)
+                    
+                    blocks.append(b)
+                    block_sizes.append(b.num_edges if problem_type == "matching" else n_nodes)
+
+                topology = TopologyManager(block_sizes)
+
+                if topo_type == "path":
+                    topology.create_path(coupling)
+                elif topo_type == "star":
+                    topology.create_star(0, coupling)
                 elif topo_type == "bintree":
-                    stages = int(math.log2(n_blocks + 1))
-                    t = math.floor(math.log2(i + 1)) + 1
-                    obj_factor = 2 ** (stages - t)
+                    topology.create_bintree(coupling)
 
-            if problem_type == "stable_set":
-                b = StableSetBlock(i, n_nodes, num_edges=n_edges, seed=seed+i, obj_factor=obj_factor)
-            elif problem_type == "matching":
-                b = MatchingBlock(i, n_nodes, num_edges=n_edges, seed=seed+i, probability=obj_factor)
-            elif problem_type == "dominating_set":  
-                b = DominatingSetBlock(i, n_nodes, num_edges=n_edges, seed=seed+i, obj_factor=obj_factor)
-            
-            blocks.append(b)
-            block_sizes.append(b.num_edges if problem_type == "matching" else n_nodes)
+                # ----- EJECUCIÓN DEL SOLVER -----
+                if solver_conf["type"] == "mono":
+                    solver = MonolithicSolver(topology, blocks, single_threaded=single_threaded) 
+                    solver.model.Params.OutputFlag = 1
+                    solver.model.Params.LogToConsole = 0
 
-        topology = TopologyManager(block_sizes)
+                    res = solver.build_and_solve(time_limit=solver_conf["time_limit"])
+                    row.update({
+                        "status": res["status"],
+                        "total_time": res["total_time"],
+                        "primal_bound": res["primal_bound"],
+                        "dual_bound": res["dual_bound"],
+                        "gap": res["gap"],
+                        "root_lp": res["root_lp_val"],
+                        "root_lp_presolved": res["root_lp_presolved_val"],
+                        "node_count": res["node_count"]
+                    })
 
-        if topo_type == "path":
-            topology.create_path(coupling)
-        elif topo_type == "star":
-            topology.create_star(0, coupling)
-        elif topo_type == "bintree":
-            topology.create_bintree(coupling)
+                elif solver_conf["type"] == "crg":
+                    strategy_args = solver_conf.get("args", {}).copy()
+                    strategy_args["single_threaded"] = single_threaded 
+                    strategy = solver_conf["class"](**strategy_args)
+                    
+                    manager = CRGManager(blocks, topology, strategy, single_threaded=single_threaded) 
+                    res = manager.run(time_limit=solver_conf["time_limit"])
+                    row.update({
+                        "status": res["status"],
+                        "total_time": res["total_time"],
+                        "primal_bound": res["primal_bound"],
+                        "dual_bound": res["dual_bound"],
+                        "gap": res["gap"],
+                        "root_lp": res["root_lp_val"],
+                        "iter_outer": res["iter_outer"],
+                        "iter_inner": res["iter_total_inner"],
+                        "cols": res["cols_added"],
+                        "cuts": res["cuts_added"],
+                        "t_master": res["time_master"],
+                        "t_pricing": res["time_pricing"]
+                    })
 
-        # ----- EJECUCIÓN DEL SOLVER -----
-        if solver_conf["type"] == "mono":
-            solver = MonolithicSolver(topology, blocks, single_threaded=single_threaded) 
-            res = solver.build_and_solve(time_limit=solver_conf["time_limit"])
-            row.update({
-                "status": res["status"],
-                "total_time": res["total_time"],
-                "primal_bound": res["primal_bound"],
-                "dual_bound": res["dual_bound"],
-                "gap": res["gap"],
-                "root_lp": res["root_lp_val"],
-                "root_lp_presolved": res["root_lp_presolved_val"],
-                "node_count": res["node_count"]
-            })
+                elif solver_conf["type"] == "lshaped":
+                    solver = IntegerLShapedSolver(topology, blocks, single_threaded=single_threaded)
+                    res = solver.solve(time_limit=solver_conf["time_limit"])
+                    row.update({
+                        "status": res["status"],
+                        "total_time": res["total_time"],
+                        "primal_bound": res["primal_bound"],
+                        "dual_bound": res["dual_bound"],
+                        "gap": res["gap"],
+                        "node_count": res["node_count"]
+                    })
 
-        elif solver_conf["type"] == "crg":
-            strategy_args = solver_conf.get("args", {}).copy()
-            strategy_args["single_threaded"] = single_threaded 
-            strategy = solver_conf["class"](**strategy_args)
-            
-            manager = CRGManager(blocks, topology, strategy, single_threaded=single_threaded) 
-            res = manager.run(time_limit=solver_conf["time_limit"])
-            row.update({
-                "status": res["status"],
-                "total_time": res["total_time"],
-                "primal_bound": res["primal_bound"],
-                "dual_bound": res["dual_bound"],
-                "gap": res["gap"],
-                "root_lp": res["root_lp_val"],
-                "iter_outer": res["iter_outer"],
-                "iter_inner": res["iter_total_inner"],
-                "cols": res["cols_added"],
-                "cuts": res["cuts_added"],
-                "t_master": res["time_master"],
-                "t_pricing": res["time_pricing"]
-            })
+                elif solver_conf["type"] == "scenario":
+                    solver = ScenarioDecompositionSolver(topology, blocks, single_threaded=single_threaded)
+                    res = solver.solve(time_limit=solver_conf["time_limit"])
+                    row.update({
+                        "status": res["status"],
+                        "total_time": res["total_time"],
+                        "primal_bound": res["primal_bound"],
+                        "dual_bound": res["dual_bound"],
+                        "gap": res["gap"],
+                        "iter_outer": res["iter"]
+                    })
 
-        elif solver_conf["type"] == "lshaped":
-            solver = IntegerLShapedSolver(topology, blocks, single_threaded=single_threaded)
-            res = solver.solve(time_limit=solver_conf["time_limit"])
-            row.update({
-                "status": res["status"],
-                "total_time": res["total_time"],
-                "primal_bound": res["primal_bound"],
-                "dual_bound": res["dual_bound"],
-                "gap": res["gap"],
-                "node_count": res["node_count"]
-            })
+            except Exception as e:
+                err_msg = traceback.format_exc()
+                row["status"] = f"Error"
+                row["total_time"] = 0.0
+                print(f"\n[CRASH ERROR]\n{err_msg}")
 
-        elif solver_conf["type"] == "scenario":
-            solver = ScenarioDecompositionSolver(topology, blocks, single_threaded=single_threaded)
-            res = solver.solve(time_limit=solver_conf["time_limit"])
-            row.update({
-                "status": res["status"],
-                "total_time": res["total_time"],
-                "primal_bound": res["primal_bound"],
-                "dual_bound": res["dual_bound"],
-                "gap": res["gap"],
-                "iter_outer": res["iter"]
-            })
+            finally:
+                if 'blocks' in locals(): del blocks
+                if 'topology' in locals(): del topology
+                gc.collect()
 
-    except Exception as e:
-        err_msg = traceback.format_exc()
-        row["status"] = f"Error"
-        row["total_time"] = 0.0
-        print(f"\n[CRASH] {solver_conf['name']} | Seed {seed} | {topo_type} | Error:\n{err_msg}")
-
-    del blocks, topology
-    gc.collect()
+    # Cerrar el archivo de Gurobi liberando el lock para el siguiente proceso
+    gp.setParam('LogFile', '')
     
     return row
 
 def main():
     parser = argparse.ArgumentParser(description="Unified Benchmark Runner")
     parser.add_argument("--workers", type=int, default=None, help="Número de workers en paralelo. Si no se entrega, se ejecuta secuencial.")
+    parser.add_argument("--logdir", type=str, default="logs", help="Directorio donde se guardará la salida individual de cada experimento.")
     args = parser.parse_args()
+
+    os.makedirs(args.logdir, exist_ok=True)
 
     completed_runs = get_completed_runs()
     pending_tasks = []
@@ -278,27 +317,30 @@ def main():
         # ----- MODO SECUENCIAL -----
         if args.workers is None:
             print(f"Starting SEQUENTIAL Benchmark Suite on {platform.node()}")
+            print(f"Logs will be saved to directory: {args.logdir}/")
+            completed_count = 0
             
             for task in pending_tasks:
                 inst_conf, seed, solver_conf = task
-                print(f"\n>>> Processing Instance: {problem_type}, {topo_type}, {n_blocks} blocks, {n_nodes} nodes, {n_edges} edges, {coupling} couplings, stochastic {is_stochastic}, Seed {seed}")
-                print(datetime.datetime.now().isoformat() + f"  > Running {solver_conf['name']}...")
-                
-                # Ejecutar con hilos internos activos
-                row_result = run_single_experiment(inst_conf, seed, solver_conf, single_threaded=False)
+                row_result = run_single_experiment(inst_conf, seed, solver_conf, single_threaded=False, logdir=args.logdir)
                 
                 writer.writerow(row_result)
                 f.flush()
+                
+                completed_count += 1
+                status = row_result.get('status', 'Unknown')
+                time_taken = row_result.get('total_time', 0)
+                print(f"[{completed_count}/{len(pending_tasks)}] DONE: {solver_conf['name']} | Seed {seed} | {inst_conf['topo']} -> Status: {status} ({time_taken:.1f}s)")
 
         # ----- MODO PARALELO -----
         else:
             print(f"Starting PARALLEL Benchmark Suite on {platform.node()} with {args.workers} workers")
+            print(f"Logs will be saved to directory: {args.logdir}/")
             completed_count = 0
             
             with concurrent.futures.ProcessPoolExecutor(max_workers=args.workers) as executor:
                 future_to_task = {
-                    # Enviamos single_threaded=True a cada tarea
-                    executor.submit(run_single_experiment, task[0], task[1], task[2], True): task 
+                    executor.submit(run_single_experiment, task[0], task[1], task[2], True, args.logdir): task 
                     for task in pending_tasks
                 }
 
