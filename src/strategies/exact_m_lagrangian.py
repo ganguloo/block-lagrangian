@@ -37,7 +37,10 @@ class ExactMLagrangianStrategy(SeparationStrategy):
         m.Params.OutputFlag = 0
         m.Params.PoolSearchMode = 2 
         m.Params.PoolSolutions = int(round(self.factor * n_vars))
-        
+
+        if self.single_threaded:
+            m.Params.Threads = 1
+
         z = m.addVars(n_vars, vtype=gp.GRB.BINARY, name="z")
         w_pos = m.addVars(len(pos_sigs), vtype=gp.GRB.BINARY, name="w_pos")
         w_neg = m.addVars(len(neg_sigs), vtype=gp.GRB.BINARY, name="w_neg")

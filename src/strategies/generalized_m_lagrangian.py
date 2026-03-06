@@ -37,6 +37,9 @@ class GeneralizedMLagrangianStrategy(SeparationStrategy):
         m.Params.OutputFlag = 0
         m.Params.PoolSearchMode = 2 
         m.Params.PoolSolutions = int(round(self.factor * n_vars))
+
+        if self.single_threaded:
+            m.Params.Threads = 1
         
         # z_plus[p] = 1 si p está en S+
         z_plus = m.addVars(n_vars, vtype=gp.GRB.BINARY, name="z_plus")
