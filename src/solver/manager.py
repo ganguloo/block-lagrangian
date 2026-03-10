@@ -98,7 +98,7 @@ class CRGManager:
                 
             for i in range(self.K):
                 if results[i]:
-                    rc, obj, x_b, w_s = results[i]
+                    rc, obj, x_b, w_s, _p_time = results[i]
                     self.master.add_column(i, obj, x_b, w_s, {}, self.strategy)
         else:
             print("[Init] No se encontró solución.")
@@ -149,6 +149,7 @@ class CRGManager:
             "total_time": 0.0,
             "time_master": 0.0,
             "time_pricing": 0.0,
+            "time_pricing_seq": 0.0,
             "iter_outer": 0,
             "iter_total_inner": 0,
             "cols_added": 0,
@@ -223,8 +224,9 @@ class CRGManager:
 
                     for i, res in enumerate(results):
                         if res:
-                            rc, obj, x_b, w_s = res
-                            sum_reduced_costs += rc  
+                            rc, obj, x_b, w_s, p_time = res
+                            sum_reduced_costs += rc
+                            metrics["time_pricing_seq"] += p_time
 
                             if rc > 1e-4:
                                 added = self.master.add_column(i, obj, x_b, w_s, self.active_cuts_by_edge, self.strategy)

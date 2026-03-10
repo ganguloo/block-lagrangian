@@ -1,4 +1,5 @@
 import gurobipy as gp
+import time
 import threading
 from typing import Dict, Tuple, List, Any
 
@@ -59,9 +60,11 @@ class PricingWorker(threading.Thread):
                     obj = self.block.local_objective_expr.copy()
                     self.model.setObjective(obj, gp.GRB.MAXIMIZE)
                     
+                    t_start = time.time()
                     with self.semaphore:
                         self.model.optimize()
-                        
+                    solve_time = time.time() - t_start
+
                     res = None
                     if self.model.Status == gp.GRB.OPTIMAL:
                         x_bounds = {}
@@ -70,7 +73,7 @@ class PricingWorker(threading.Thread):
                             vals = [int(round(v.X)) for v in vars_list]
                             x_bounds[nid] = vals
                             w_sigs[nid] = self.strategy.get_w_signature(vals)
-                        res = (self.model.ObjVal, self.block.local_objective_expr.getValue(), x_bounds, w_sigs)
+                        res = (self.model.ObjVal, self.block.local_objective_expr.getValue(), x_bounds, w_sigs, solve_time)
                         
                     # Restaurar las cotas originales
                     for var, lb, ub in orig_bounds:
@@ -82,6 +85,7 @@ class PricingWorker(threading.Thread):
                     
                 elif cmd == "SOLVE":
                     # Iteración normal de Pricing
+                    t_start = time.time()
                     alpha, pi, mu, active_cuts = payload
                     
                     obj = self.block.local_objective_expr.copy()
@@ -114,9 +118,10 @@ class PricingWorker(threading.Thread):
                         penalty_inputs = []
 
                     self.model.setObjective(obj, gp.GRB.MAXIMIZE)
-                    
+
                     with self.semaphore:
                         self.model.optimize()
+                    solve_time = time.time() - t_start
 
                     if self.model.Status != gp.GRB.OPTIMAL:
                         self.out_q.put((self.p_idx, "RESULT", None))
@@ -128,7 +133,7 @@ class PricingWorker(threading.Thread):
                             x_bounds[nid] = vals
                             w_sigs[nid] = self.strategy.get_w_signature(vals)
                         
-                        res = (self.model.ObjVal, self.block.local_objective_expr.getValue(), x_bounds, w_sigs)
+                        res = (self.model.ObjVal, self.block.local_objective_expr.getValue(), x_bounds, w_sigs, solve_time)
                         self.out_q.put((self.p_idx, "RESULT", res))
                         
             except Exception as e:
