@@ -221,7 +221,9 @@ def run_single_experiment(inst_conf, seed, solver_conf, single_threaded, logdir)
                         "cols": res["cols_added"],
                         "cuts": res["cuts_added"],
                         "t_master": res["time_master"],
-                        "t_pricing": res["time_pricing"]
+                        "t_pricing": res["time_pricing"],
+                        "avg_t_inner": res["time_pricing"]/max(res["iter_total_inner"],1),
+                        "cut_col_ratio": res["cuts_added"]/max(res["cols_added"],1)
                     })
 
                 elif solver_conf["type"] == "lshaped":
@@ -310,7 +312,7 @@ def main():
         "timestamp", "host", "cpu", "problem", "topo", "n_blocks", "n_nodes", "n_edges", "coupling", "stochastic",
         "seed", "solver", "status", "total_time", "primal_bound", "dual_bound", "gap",
         "root_lp", "root_lp_presolved", "node_count", "iter_outer", "iter_inner", "cols", "cuts",
-        "t_master", "t_pricing"
+        "t_master", "t_pricing", "avg_t_inner", "cut_col_ratio"
     ]
     file_exists = os.path.exists(OUTPUT_FILE)
 
