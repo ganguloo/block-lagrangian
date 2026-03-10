@@ -6,14 +6,24 @@ class PricingSolver:
         self.block = block
         self.strategy = strategy
         self.topology = topology
-        self.num_threads = num_threads # <--- NUEVO
+        self.num_threads = num_threads
+        self.env = None
         self.rebuild_model()
 
     def rebuild_model(self):
-        self.block.build_model()
-        self.model = self.block.model
+        if self.env is None:
+            self.env = gp.Env(empty=True)
+            self.env.setParam("OutputFlag", 0)
+            self.env.start()
+
+        self.model = gp.Model(self.block.name, env=self.env)
         self.model.Params.NonConvex = 2
-        self.model.Params.Threads = self.num_threads # <--- ASIGNACIÓN DINÁMICA
+        self.model.Params.Threads = self.num_threads
+
+        self.block.build_model(parent_model=self.model)
+        self.model.setObjective(self.block.local_objective_expr, gp.GRB.MAXIMIZE)
+        self.model.update()
+
         self.boundary_vars = {}
         for nid in self.topology.get_neighbors(self.block.block_id):
             u, v = sorted((self.block.block_id, nid))

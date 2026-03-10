@@ -190,7 +190,10 @@ class IntegerLShapedSolver:
             if m_relax.Status == gp.GRB.OPTIMAL:
                 total_max_possible += m_relax.ObjVal
             else:
-                total_max_possible += 1000.0 # Fallback de seguridad
+                total_max_possible += 1e9 # Fallback de seguridad
+                
+            m_relax.dispose()
+            m_temp.dispose()
                 
             # 2. Desenganchar objetos de C++ (Gurobi) antes del deepcopy
             orig_model = leaf.model
@@ -213,7 +216,7 @@ class IntegerLShapedSolver:
             self.workers.append(w)
             
         # Amplio margen para garantizar que Big-M no limite la búsqueda
-        self.global_upper_bound_U = total_max_possible + 1e5
+        self.global_upper_bound_U = total_max_possible
         print(f"[*] Cota Big-M (U) inicializada en: {self.global_upper_bound_U}")
 
     def _build_master(self):
