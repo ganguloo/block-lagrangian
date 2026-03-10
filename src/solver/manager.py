@@ -1,12 +1,14 @@
 import time
 import math
 import gurobipy as gp
-import concurrent.futures
+import threading
+import queue
+import copy
 from datetime import datetime
 from typing import Dict, Any
 from ..instance.topology import TopologyManager
 from ..solver.master import MasterProblem
-from ..solver.pricing import PricingSolver
+from ..solver.pricing import PricingWorker
 from ..monolithic.solver import MonolithicSolver
 
 class CRGManager:
@@ -26,17 +28,24 @@ class CRGManager:
             self.num_workers = min(len(self.blocks), 16)
             self.num_threads = max(1, math.floor(32 / self.num_workers))
         
-        # Pasar num_threads a los pricers
-        self.pricers = [PricingSolver(b, strategy, topology, self.num_threads) for b in blocks]
+        self.semaphore = threading.Semaphore(self.num_workers)
         self.cut_registry = {}
         self.active_cuts_by_edge = {}
-        
-        # Limitar ThreadPoolExecutor
-        self.executor = concurrent.futures.ThreadPoolExecutor(max_workers=self.num_workers)
         self.initial_dual_bound = float('inf')
+        
+        # --- Pre-procesamiento sincrónico previo a creación de hilos ---
+        if all(hasattr(i, 'inherit_conflicts') for i in self.blocks):
+            self._propagate_conflicts()
+            
+        self.K = len(self.blocks)
+        self.in_queues = [queue.Queue() for _ in range(self.K)]
+        self.out_queue = queue.Queue()
+        self.workers = []
+            
+        self._prepare_workers()
 
     def _propagate_conflicts(self):
-        print("Pre-procesamiento: Propagando conflictos Stable Set...")
+        print("Pre-procesamiento: Propagando conflictos Stable Set en CRG...")
         changed = True
         while changed:
             changed = False
@@ -46,9 +55,21 @@ class CRGManager:
                 if blk_v.inherit_conflicts(blk_u, edge_info.vars_v, edge_info.vars_u): changed = True
                 if blk_u.inherit_conflicts(blk_v, edge_info.vars_u, edge_info.vars_v): changed = True
 
-    def _solve_pricing_task(self, args):
-        p_idx, alpha_i, pi, mu, cuts = args
-        return p_idx, self.pricers[p_idx].solve(alpha_i, pi, mu, cuts)
+    def _prepare_workers(self):
+        for i, block in enumerate(self.blocks):
+            block_copy = copy.deepcopy(block)
+            w = PricingWorker(
+                p_idx=i, 
+                block=block_copy, 
+                strategy=self.strategy, 
+                topology=self.topology, 
+                num_threads=self.num_threads, 
+                in_q=self.in_queues[i], 
+                out_q=self.out_queue, 
+                semaphore=self.semaphore
+            )
+            w.start()
+            self.workers.append(w)
 
     def _initialize_from_monolithic(self):
         print("Inicializando con Monolítico (10w)...")
@@ -61,23 +82,24 @@ class CRGManager:
         if mono.model.SolCount > 0:
             print(f"[Init] Solución inicial encontrada: {mono.model.ObjVal}")
             self.primal_bound = mono.model.ObjVal
+            
             initial_vals = {}
-            for i in range(len(self.blocks)):
+            for i in range(self.K):
                 initial_vals[i] = mono.get_block_solution(i)
-            for pricer in self.pricers: pricer.rebuild_model()
-            for i, pricer in enumerate(self.pricers):
-                x_full = initial_vals[i]
-                orig_lbs = {v: v.LB for v in pricer.block.vars.values()}
-                orig_ubs = {v: v.UB for v in pricer.block.vars.values()}
-                for idx, var in pricer.block.vars.items():
-                    var.LB = x_full[idx]
-                    var.UB = x_full[idx]
-                pricer.model.update()
-                rc, obj, x_b, w_s = pricer.solve(0.0, {}, {}, {})
-                self.master.add_column(i, obj, x_b, w_s, {}, self.strategy)
-                for var, lb in orig_lbs.items(): var.LB = lb
-                for var, ub in orig_ubs.items(): var.UB = ub
-                pricer.model.update()
+            
+            # Enviar tareas a los workers usando el comando INIT_COLUMN
+            for i in range(self.K):
+                self.in_queues[i].put(("INIT_COLUMN", initial_vals[i]))
+                
+            results = [None] * self.K
+            for _ in range(self.K):
+                p_idx, msg, data = self.out_queue.get()
+                results[p_idx] = data
+                
+            for i in range(self.K):
+                if results[i]:
+                    rc, obj, x_b, w_s = results[i]
+                    self.master.add_column(i, obj, x_b, w_s, {}, self.strategy)
         else:
             print("[Init] No se encontró solución.")
             self.primal_bound = -1e9
@@ -93,6 +115,8 @@ class CRGManager:
                 print(f"[Init] Cota Dual Inicial (LR): {self.initial_dual_bound}")
             else:
                 self.initial_dual_bound = float('inf')
+            m_relax.dispose()
+            m_copy.dispose()
         except:
             self.initial_dual_bound = float('inf')
 
@@ -116,8 +140,9 @@ class CRGManager:
                 if m_heur.ObjVal > metrics["primal_bound"]:
                     metrics["primal_bound"] = m_heur.ObjVal
                     print("Heuristic solution:", m_heur.ObjVal)
+            m_heur.dispose()
         except: pass
-
+        
     def run(self, time_limit=None) -> Dict[str, Any]:
         metrics = {
             "status": "Running",
@@ -135,187 +160,192 @@ class CRGManager:
         }
 
         start_total = time.time()
+        
+        try:
+            self._initialize_from_monolithic()
 
-        if all(hasattr(i, 'inherit_conflicts') for i in self.blocks):
-            self._propagate_conflicts()
-
-        for p in self.pricers: p.rebuild_model()
-        self._initialize_from_monolithic()
-
-        metrics["primal_bound"] = self.primal_bound
-        metrics["dual_bound"] = self.initial_dual_bound
-
-        while True:
-            metrics["iter_outer"] += 1
-            print(f"\\n--- Iteración Externa {metrics['iter_outer']} --- {datetime.now()}")
-
-            if time_limit and (time.time() - start_total) > time_limit:
-                metrics["status"] = "TimeLimit"
-                break
-
-            inner_cols = 0
-            stop_outer = False
+            metrics["primal_bound"] = self.primal_bound
+            metrics["dual_bound"] = self.initial_dual_bound
 
             while True:
-                metrics["iter_total_inner"] += 1
-                t0 = time.time()
-                self.master.solve()
-                metrics["time_master"] += time.time() - t0
-
-                if self.master.model.Status != gp.GRB.OPTIMAL:
-                    metrics["status"] = "Master_Infeasible"
-                    stop_outer = True
-                    break
-
-                current_obj = self.master.model.ObjVal
-
-                is_int = self._check_integrality()
-                star = "*" if is_int else ""
-                if is_int:
-                    if current_obj > metrics["primal_bound"]:
-                        metrics["primal_bound"] = current_obj
+                metrics["iter_outer"] += 1
+                print(f"\\n--- Iteración Externa {metrics['iter_outer']} --- {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
 
                 if time_limit and (time.time() - start_total) > time_limit:
                     metrics["status"] = "TimeLimit"
-                    stop_outer = True
                     break
 
-                alpha, pi, mu = self.master.get_duals()
-                cols_added_iter = 0
-                max_rc = 0.0
+                inner_cols = 0
+                stop_outer = False
 
-                t0 = time.time()
-                tasks = [(i, alpha[i], pi, mu, self.active_cuts_by_edge) for i in range(len(self.pricers))]
-                results = self.executor.map(self._solve_pricing_task, tasks)
+                while True:
+                    metrics["iter_total_inner"] += 1
+                    t0 = time.time()
+                    self.master.solve()
+                    metrics["time_master"] += time.time() - t0
 
-                # --- V69: Cota Lagrangiana (Dual Bound) ---
-                sum_reduced_costs = 0.0
-                all_pricers_solved = True
-
-                for i, res in results:
-                    if res:
-                        rc, obj, x_b, w_s = res
-                        sum_reduced_costs += rc  # rc aquí es el valor óptimo del pricing (costo reducido)
-
-                        if rc > 1e-4:
-                            added = self.master.add_column(i, obj, x_b, w_s, self.active_cuts_by_edge, self.strategy)
-                            if added:
-                                cols_added_iter += 1
-                                max_rc = max(max_rc, rc)
-                    else:
-                        all_pricers_solved = False
-
-                if all_pricers_solved:
-                    # En CG para maximización, Dual Bound = Z_Master + Sum(Reduced Costs)
-                    current_lagrangian_bound = current_obj + sum_reduced_costs
-                    # "Actualizar solo si decrece"
-                    if current_lagrangian_bound < metrics["dual_bound"]:
-                        metrics["dual_bound"] = current_lagrangian_bound
-
-                metrics["time_pricing"] += time.time() - t0
-                metrics["cols_added"] += cols_added_iter
-                inner_cols += cols_added_iter
-
-                # Agregado DB al log
-                print(f"  Iter {metrics['iter_total_inner']}: Obj {current_obj:.4f} {star}, DB {metrics['dual_bound']:.4f}, Time {(time.time()-start_total):.1f}s, Cols +{cols_added_iter}")
-
-                if metrics["dual_bound"] < float('inf') and metrics["primal_bound"] > -float('inf'):
-                    denom = abs(metrics["dual_bound"])
-                    if denom < 1e-10: denom = 1.0 # Evitar división por cero si el óptimo es 0
-                    metrics["gap"] = abs(metrics["dual_bound"] - metrics["primal_bound"]) / denom
-                    if metrics["gap"] < 1e-6:
-                        metrics["status"] = "Gap_Closed"
+                    if self.master.model.Status != gp.GRB.OPTIMAL:
+                        metrics["status"] = "Master_Infeasible"
                         stop_outer = True
                         break
-                    if math.floor(metrics["dual_bound"] + 1e-6) == math.floor(metrics["primal_bound"] + 1e-6):
-                        metrics["status"] = "Integer_Gap_Closed"
+
+                    current_obj = self.master.model.ObjVal
+
+                    is_int = self._check_integrality()
+                    star = "*" if is_int else ""
+                    if is_int:
+                        if current_obj > metrics["primal_bound"]:
+                            metrics["primal_bound"] = current_obj
+
+                    if time_limit and (time.time() - start_total) > time_limit:
+                        metrics["status"] = "TimeLimit"
                         stop_outer = True
-                        self.master.solve()
                         break
 
-                if cols_added_iter == 0:
+                    alpha, pi, mu = self.master.get_duals()
+                    cols_added_iter = 0
+                    max_rc = 0.0
+
+                    t0 = time.time()
+                    
+                    # --- DIFUNDIR TAREAS DE PRICING A TODOS LOS ACTORES ---
+                    for i in range(self.K):
+                        self.in_queues[i].put(("SOLVE", (alpha[i], pi, mu, self.active_cuts_by_edge)))
+                        
+                    # --- RECOPILAR RESULTADOS SINCRONIZADOS ---
+                    results = [None] * self.K
+                    for _ in range(self.K):
+                        p_idx, msg, data = self.out_queue.get()
+                        results[p_idx] = data
+
+                    sum_reduced_costs = 0.0
+                    all_pricers_solved = True
+
+                    for i, res in enumerate(results):
+                        if res:
+                            rc, obj, x_b, w_s = res
+                            sum_reduced_costs += rc  
+
+                            if rc > 1e-4:
+                                added = self.master.add_column(i, obj, x_b, w_s, self.active_cuts_by_edge, self.strategy)
+                                if added:
+                                    cols_added_iter += 1
+                                    max_rc = max(max_rc, rc)
+                        else:
+                            all_pricers_solved = False
+
+                    if all_pricers_solved:
+                        current_lagrangian_bound = current_obj + sum_reduced_costs
+                        if current_lagrangian_bound < metrics["dual_bound"]:
+                            metrics["dual_bound"] = current_lagrangian_bound
+
+                    metrics["time_pricing"] += time.time() - t0
+                    metrics["cols_added"] += cols_added_iter
+                    inner_cols += cols_added_iter
+
+                    print(f"  Iter {metrics['iter_total_inner']}: Obj {current_obj:.4f} {star}, DB {metrics['dual_bound']:.4f}, Time {(time.time()-start_total):.1f}s, Cols +{cols_added_iter}")
+
+                    if metrics["dual_bound"] < float('inf') and metrics["primal_bound"] > -float('inf'):
+                        denom = abs(metrics["dual_bound"])
+                        if denom < 1e-10: denom = 1.0 
+                        metrics["gap"] = abs(metrics["dual_bound"] - metrics["primal_bound"]) / denom
+                        if metrics["gap"] < 1e-6:
+                            metrics["status"] = "Gap_Closed"
+                            stop_outer = True
+                            break
+                        if math.floor(metrics["dual_bound"] + 1e-6) == math.floor(metrics["primal_bound"] + 1e-6):
+                            metrics["status"] = "Integer_Gap_Closed"
+                            stop_outer = True
+                            self.master.solve()
+                            break
+
+                    if cols_added_iter == 0:
+                        break
+
+                    if metrics["dual_bound"] < float('inf') and current_obj > -float('inf'):
+                        denom = abs(metrics["dual_bound"])
+                        if denom < 1e-10: denom = 1.0 
+                        inner_gap = abs(metrics["dual_bound"] - current_obj) / denom
+                        if inner_gap < 1e-6:
+                            self.master.solve()
+                            break
+
+                if metrics["iter_outer"] == 1 and metrics["root_lp_val"] is None:
+                    metrics["root_lp_val"] = metrics["dual_bound"]
+
+                if stop_outer:
+                    print(f"Fin Outer {metrics['iter_outer']} (Interrupted): Obj {metrics['dual_bound']:.4f}, Status: {metrics['status']}")
                     break
 
-                if metrics["dual_bound"] < float('inf') and current_obj > -float('inf'):
-                    denom = abs(metrics["dual_bound"])
-                    if denom < 1e-10: denom = 1.0 # Evitar división por cero si el óptimo es 0
-                    inner_gap = abs(metrics["dual_bound"] - current_obj) / denom
-                    if inner_gap < 1e-6:
-                        self.master.solve()
-                        break
-                    #if math.floor(metrics["dual_bound"] + 1e-6) == math.floor(current_obj + 1e-6):
-                    #    self.master.solve()
-                    #    break
+                cuts_added_iter = 0
+                w_sol = {}
+                for b_id, cols in self.master.lambda_vars.items():
+                    for sig_tuple, var in cols.items():
+                        if var.X > 1e-5:
+                            w_sigs_list = sig_tuple[2]
+                            for nid, sig in w_sigs_list:
+                                u, v = sorted((b_id, nid))
+                                if (u, v) not in w_sol: w_sol[u, v] = ({}, {})
+                                target_dict = w_sol[u, v][0] if b_id == u else w_sol[u, v][1]
+                                target_dict[sig] = target_dict.get(sig, 0.0) + var.X
 
-            if metrics["iter_outer"] == 1 and metrics["root_lp_val"] is None:
-                metrics["root_lp_val"] = metrics["dual_bound"]
+                new_constraints = []
+                for (u, v), (w_u, w_v) in w_sol.items():
+                    violations = self.strategy.separate(w_u, w_v)
+                    for sig in violations:
+                        if (u, v, sig) not in self.cut_registry:
+                            cut_name = f"cut_{u}_{v}_{len(self.cut_registry)}"
+                            lhs = gp.LinExpr()
+                            for b_id in [u, v]:
+                                for sig_t, var in self.master.lambda_vars[b_id].items():
+                                    for n_chk, col_w_sig in sig_t[2]:
+                                        if n_chk == (v if b_id == u else u):
+                                            w_val = self.strategy.evaluate_cut(col_w_sig, sig)
+                                            if abs(w_val) > 1e-6:
+                                                coeff = w_val * (1.0 if b_id == u else -1.0)
+                                                lhs.add(var, coeff)
+                            constr = self.master.model.addConstr(lhs == 0.0, name=cut_name)
+                            new_constraints.append((constr, u, v, sig))
+                            cut_id = len(self.cut_registry)
+                            self.cut_registry[u, v, sig] = cut_id
+                            self.master.ctr_cuts[cut_id] = constr
+                            if (u,v) not in self.active_cuts_by_edge: self.active_cuts_by_edge[u,v] = []
+                            self.active_cuts_by_edge[u,v].append((cut_id, sig))
+                            cuts_added_iter += 1
 
-            if stop_outer:
-                print(f"Fin Outer {metrics['iter_outer']} (Interrupted): Obj {metrics['dual_bound']:.4f}, Status: {metrics['status']}")
-                break
+                metrics["cuts_added"] += cuts_added_iter
 
-            cuts_added_iter = 0
-            w_sol = {}
-            for b_id, cols in self.master.lambda_vars.items():
-                for sig_tuple, var in cols.items():
-                    if var.X > 1e-5:
-                        w_sigs_list = sig_tuple[2]
-                        for nid, sig in w_sigs_list:
-                            u, v = sorted((b_id, nid))
-                            if (u, v) not in w_sol: w_sol[u, v] = ({}, {})
-                            target_dict = w_sol[u, v][0] if b_id == u else w_sol[u, v][1]
-                            target_dict[sig] = target_dict.get(sig, 0.0) + var.X
+                if cuts_added_iter > 0:
+                    t0 = time.time()
+                    self.master.solve()
+                    metrics["time_master"] += time.time() - t0
 
-            new_constraints = []
-            for (u, v), (w_u, w_v) in w_sol.items():
-                violations = self.strategy.separate(w_u, w_v)
-                for sig in violations:
-                    if (u, v, sig) not in self.cut_registry:
-                        cut_name = f"cut_{u}_{v}_{len(self.cut_registry)}"
-                        lhs = gp.LinExpr()
-                        for b_id in [u, v]:
-                            for sig_t, var in self.master.lambda_vars[b_id].items():
-                                for n_chk, col_w_sig in sig_t[2]:
-                                    if n_chk == (v if b_id == u else u):
-                                        w_val = self.strategy.evaluate_cut(col_w_sig, sig)
-                                        if abs(w_val) > 1e-6:
-                                            coeff = w_val * (1.0 if b_id == u else -1.0)
-                                            lhs.add(var, coeff)
-                        constr = self.master.model.addConstr(lhs == 0.0, name=cut_name)
-                        new_constraints.append((constr, u, v, sig))
-                        cut_id = len(self.cut_registry)
-                        self.cut_registry[u, v, sig] = cut_id
-                        self.master.ctr_cuts[cut_id] = constr
-                        if (u,v) not in self.active_cuts_by_edge: self.active_cuts_by_edge[u,v] = []
-                        self.active_cuts_by_edge[u,v].append((cut_id, sig))
-                        cuts_added_iter += 1
+                self._run_mip_heuristic(metrics)
 
-            metrics["cuts_added"] += cuts_added_iter
+                print(f"Fin Outer {metrics['iter_outer']}: Obj {metrics['dual_bound']:.4f}, Cuts +{cuts_added_iter}")
 
-            if cuts_added_iter > 0:
-                t0 = time.time()
-                self.master.solve()
-                metrics["time_master"] += time.time() - t0
+                if cuts_added_iter == 0 and inner_cols == 0:
+                    metrics["status"] = "Converged"
+                    break
 
-            self._run_mip_heuristic(metrics)
-
-            print(f"Fin Outer {metrics['iter_outer']}: Obj {metrics['dual_bound']:.4f}, Cuts +{cuts_added_iter}")
-
-            if cuts_added_iter == 0 and inner_cols == 0:
-                metrics["status"] = "Converged"
-                break
-
-        print(">>> Solving Final MIP (Heuristic)...")
-        self.master.switch_to_binary()
-        self.master.solve()
-        if self.master.model.Status == gp.GRB.OPTIMAL:
-             if self.master.model.ObjVal > metrics["primal_bound"]:
-                 metrics["primal_bound"] = self.master.model.ObjVal
-                 print(f"    New Primal Bound found: {metrics['primal_bound']}")
+            print(">>> Solving Final MIP (Heuristic)...")
+            self.master.switch_to_binary()
+            self.master.solve()
+            if self.master.model.Status == gp.GRB.OPTIMAL:
+                 if self.master.model.ObjVal > metrics["primal_bound"]:
+                     metrics["primal_bound"] = self.master.model.ObjVal
+                     print(f"    New Primal Bound found: {metrics['primal_bound']}")
+                     
+        finally:
+            # Apagado limpio y asíncrono de los Workers
+            for q in self.in_queues:
+                q.put(("STOP", None))
+            for w in self.workers:
+                w.join()
 
         metrics["total_time"] = time.time() - start_total
         if metrics["dual_bound"] < float('inf') and metrics["primal_bound"] > -float('inf'):
             denom = abs(metrics["dual_bound"])
-            if denom < 1e-10: denom = 1.0 # Evitar división por cero si el óptimo es 0
+            if denom < 1e-10: denom = 1.0 
             metrics["gap"] = abs(metrics["dual_bound"] - metrics["primal_bound"]) / denom
         return metrics
