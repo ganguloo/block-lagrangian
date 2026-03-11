@@ -38,6 +38,49 @@ class DominatingSetBlock(AbstractBlock):
             edges = [all_pairs[i] for i in indices]
             
         return edges
+    
+    def inherit_conflicts(self, other_block: 'DominatingSetBlock', 
+                            shared_vars_self: List[int], 
+                            shared_vars_other: List[int]) -> bool:
+            """
+            Preproceso de dominancia para problemas de cobertura (Covering).
+            Si el vecindario del otro bloque es más restrictivo (subconjunto) y está
+            completamente dentro de la frontera compartida, podemos eliminar arcos 
+            locales para hacer la relajación LP más fuerte sin perder soluciones óptimas.
+            """
+            changed = False
+            
+            shared_other_set = set(shared_vars_other)
+            # Mapeo por si los índices acoplados difieren (aunque en tu caso coinciden)
+            map_other_to_self = {o: s for s, o in zip(shared_vars_self, shared_vars_other)}
+            
+            for u_self, u_other in zip(shared_vars_self, shared_vars_other):
+                N_self = set(self.adj[u_self])
+                N_other = set(other_block.adj[u_other])
+                
+                # Condición 1: Para que el otro bloque pueda dominarnos, TODOS sus vecinos 
+                # para este nodo deben ser variables compartidas que el Master pueda igualar.
+                if N_other.issubset(shared_other_set):
+                    
+                    # Traducimos los IDs de los nodos del otro bloque a nuestros propios IDs
+                    N_other_translated = {map_other_to_self[v] for v in N_other}
+                    
+                    # Condición 2: El vecindario del otro bloque es un subconjunto estricto del nuestro
+                    if N_other_translated.issubset(N_self) and len(N_other_translated) < len(N_self):
+                        
+                        # TIGHTEN: Reducimos nuestro vecindario eliminando arcos inútiles
+                        self.adj[u_self] = list(N_other_translated)
+                        
+                        # Limpiamos self.edges para mantener la coherencia interna
+                        dropped_nodes = N_self - N_other_translated
+                        self.edges = [e for e in self.edges if not (
+                            (e[0] == u_self and e[1] in dropped_nodes) or 
+                            (e[1] == u_self and e[0] in dropped_nodes)
+                        )]
+                        
+                        changed = True
+                        
+            return changed
 
     def build_model(self, parent_model: gp.Model = None, prefix: str = None):
         if parent_model:

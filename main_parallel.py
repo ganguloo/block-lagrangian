@@ -217,7 +217,7 @@ def worker_task(inst_conf, seed, solver_conf):
         row["status"] = f"Error: {str(e)}"
         row["total_time"] = 0.0
         # Imprimimos el error directo en la consola para depuración
-        print(f"\n[CRASH] {solver_conf['name']} | Seed {seed} | {topo_type} | Error:\n{err_msg}")
+        print(f"\n[CRASH] {solver_conf['name']} | Seed {seed} | {topo_type} | Error:\n{err_msg}", flush=True)
 
     # Limpieza de memoria
     del blocks, topology
@@ -230,7 +230,7 @@ def main():
     parser.add_argument("--workers", type=int, default=os.cpu_count(), help="Número de workers en paralelo")
     args = parser.parse_args()
 
-    print(f"Starting PARALLEL Benchmark Suite on {platform.node()} with {args.workers} workers")
+    print(f"Starting PARALLEL Benchmark Suite on {platform.node()} with {args.workers} workers", flush=True)
 
     completed_runs = get_completed_runs()
     
@@ -264,9 +264,9 @@ def main():
                 # Guardamos la tupla de argumentos para el worker
                 pending_tasks.append((inst_conf, seed, solver_conf))
 
-    print(f"Total pending tasks: {len(pending_tasks)}")
+    print(f"Total pending tasks: {len(pending_tasks)}", flush=True)
     if len(pending_tasks) == 0:
-        print("All experiments completed!")
+        print("All experiments completed!", flush=True)
         return
 
     # 2. Configurar escritura CSV (El hilo principal se encarga para evitar conflictos)
@@ -308,12 +308,12 @@ def main():
                     completed_count += 1
                     status = row_result.get('status', 'Unknown')
                     time_taken = row_result.get('total_time', 0)
-                    print(f"[{completed_count}/{len(pending_tasks)}] DONE: {solver_info['name']} | Seed {seed_info} | {inst_info['topo']} -> Status: {status} ({time_taken:.1f}s)")
+                    print(f"[{completed_count}/{len(pending_tasks)}] DONE: {solver_info['name']} | Seed {seed_info} | {inst_info['topo']} -> Status: {status} ({time_taken:.1f}s)", flush=True)
                     
                 except Exception as exc:
-                    print(f"Task generated an exception: {exc}")
+                    print(f"Task generated an exception: {exc}", flush=True)
 
-    print(f"\nParallel Benchmark Finished. Results saved to {OUTPUT_FILE}")
+    print(f"\nParallel Benchmark Finished. Results saved to {OUTPUT_FILE}", flush=True)
 
 if __name__ == "__main__":
     main()
