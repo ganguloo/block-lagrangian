@@ -60,10 +60,10 @@ class PricingWorker(threading.Thread):
                     obj = self.block.local_objective_expr.copy()
                     self.model.setObjective(obj, gp.GRB.MAXIMIZE)
                     
-                    t_start = time.time()
                     with self.semaphore:
+                        t_start = time.time()
                         self.model.optimize()
-                    solve_time = time.time() - t_start
+                        solve_time = time.time() - t_start
 
                     res = None
                     if self.model.Status == gp.GRB.OPTIMAL:
@@ -85,7 +85,6 @@ class PricingWorker(threading.Thread):
                     
                 elif cmd == "SOLVE":
                     # Iteración normal de Pricing
-                    t_start = time.time()
                     alpha, pi, mu, active_cuts = payload
                     
                     obj = self.block.local_objective_expr.copy()
@@ -120,8 +119,9 @@ class PricingWorker(threading.Thread):
                     self.model.setObjective(obj, gp.GRB.MAXIMIZE)
 
                     with self.semaphore:
+                        t_start = time.time()
                         self.model.optimize()
-                    solve_time = time.time() - t_start
+                        solve_time = time.time() - t_start
 
                     if self.model.Status != gp.GRB.OPTIMAL:
                         self.out_q.put((self.p_idx, "RESULT", None))
