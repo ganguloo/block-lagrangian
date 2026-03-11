@@ -260,7 +260,7 @@ def run_single_experiment(inst_conf, seed, solver_conf, single_threaded, logdir)
                 err_msg = traceback.format_exc()
                 row["status"] = f"Error"
                 row["total_time"] = 0.0
-                print(f"\n[CRASH ERROR]\n{err_msg}")
+                print(f"\n[CRASH ERROR]\n{err_msg}", flush=True)
 
             finally:
                 if 'blocks' in locals(): del blocks
@@ -309,9 +309,9 @@ def main():
                 
                 pending_tasks.append((inst_conf, seed, solver_conf))
 
-    print(f"Total pending tasks: {len(pending_tasks)}")
+    print(f"Total pending tasks: {len(pending_tasks)}", flush=True)
     if len(pending_tasks) == 0:
-        print("All experiments completed!")
+        print("All experiments completed!", flush=True)
         return
 
     fieldnames = [
@@ -330,8 +330,8 @@ def main():
 
         # ----- MODO SECUENCIAL -----
         if args.workers is None:
-            print(f"Starting SEQUENTIAL Benchmark Suite on {platform.node()}")
-            print(f"Logs will be saved to directory: {args.logdir}/")
+            print(f"Starting SEQUENTIAL Benchmark Suite on {platform.node()}", flush=True)
+            print(f"Logs will be saved to directory: {args.logdir}/", flush=True)
             completed_count = 0
             
             for task in pending_tasks:
@@ -344,12 +344,12 @@ def main():
                 completed_count += 1
                 status = row_result.get('status', 'Unknown')
                 time_taken = row_result.get('total_time', 0)
-                print(f"[{completed_count}/{len(pending_tasks)}] DONE: {solver_conf['name']} | Seed {seed} | {inst_conf['topo']} -> Status: {status} ({time_taken:.1f}s)")
+                print(f"[{completed_count}/{len(pending_tasks)}] DATE {datetime.datetime.now().isoformat()} DONE: {solver_conf['name']} | Seed {seed} | {inst_conf['topo']} -> Status: {status} ({time_taken:.1f}s)", flush=True)
 
         # ----- MODO PARALELO -----
         else:
-            print(f"Starting PARALLEL Benchmark Suite on {platform.node()} with {args.workers} workers")
-            print(f"Logs will be saved to directory: {args.logdir}/")
+            print(f"Starting PARALLEL Benchmark Suite on {platform.node()} with {args.workers} workers", flush=True)
+            print(f"Logs will be saved to directory: {args.logdir}/", flush=True)
             completed_count = 0
             
             with concurrent.futures.ProcessPoolExecutor(max_workers=args.workers) as executor:
@@ -370,12 +370,12 @@ def main():
                         completed_count += 1
                         status = row_result.get('status', 'Unknown')
                         time_taken = row_result.get('total_time', 0)
-                        print(f"[{completed_count}/{len(pending_tasks)}] DONE: {solver_info['name']} | Seed {seed_info} | {inst_info['topo']} -> Status: {status} ({time_taken:.1f}s)")
+                        print(f"[{completed_count}/{len(pending_tasks)}] DATE {datetime.datetime.now().isoformat()} DONE: {solver_info['name']} | Seed {seed_info} | {inst_info['topo']} -> Status: {status} ({time_taken:.1f}s)", flush=True)
                         
                     except Exception as exc:
-                        print(f"Task generated an exception: {exc}")
+                        print(f"Task generated an exception: {exc}", flush=True)
 
-    print(f"\nBenchmark Finished. Results saved to {OUTPUT_FILE}")
+    print(f"\nBenchmark Finished. Results saved to {OUTPUT_FILE}", flush=True)
 
 if __name__ == "__main__":
     main()
