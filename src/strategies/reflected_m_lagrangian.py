@@ -36,7 +36,7 @@ class ReflectedMLagrangianStrategy(SeparationStrategy):
         m = gp.Model("ReflectedMLag_Sep")
         m.Params.OutputFlag = 0
         m.Params.PoolSearchMode = 2 
-        m.Params.PoolSolutions = max(1, int(round(self.factor * n_vars)))
+        m.Params.PoolSolutions = int(round(self.factor * n_vars))
 
         if self.single_threaded:
             m.Params.Threads = 1

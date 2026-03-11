@@ -27,28 +27,28 @@ from src.solvers.scenario_decomposition import ScenarioDecompositionSolver
 import gurobipy as gp
 
 # ==================== CONFIGURATION ====================
-OUTPUT_FILE = "benchmark_results_n100_m4500_b15.csv"
+OUTPUT_FILE = "benchmark_results_w0_n100_m500_b15.csv"
 
 INSTANCE_GRID = [
-    {"problem": "stable_set", "n_blocks": 15, "n_nodes": 100, "n_edges": 4500, "coupling": 20, "topo": "star"},
-    {"problem": "stable_set", "n_blocks": 15, "n_nodes": 100, "n_edges": 4500, "coupling": 20, "topo": "path"},
-    {"problem": "stable_set", "n_blocks": 15, "n_nodes": 100, "n_edges": 4500, "coupling": 20, "topo": "bintree"},
-    {"problem": "stable_set", "n_blocks": 15, "n_nodes": 100, "n_edges": 4500, "coupling": 30, "topo": "star"},
-    {"problem": "stable_set", "n_blocks": 15, "n_nodes": 100, "n_edges": 4500, "coupling": 30, "topo": "path"},
-    {"problem": "stable_set", "n_blocks": 15, "n_nodes": 100, "n_edges": 4500, "coupling": 30, "topo": "bintree"},
-    {"problem": "stable_set", "n_blocks": 15, "n_nodes": 100, "n_edges": 4500, "coupling": 40, "topo": "star"},
-    {"problem": "stable_set", "n_blocks": 15, "n_nodes": 100, "n_edges": 4500, "coupling": 40, "topo": "path"},
-    {"problem": "stable_set", "n_blocks": 15, "n_nodes": 100, "n_edges": 4500, "coupling": 40, "topo": "bintree"},
+    {"problem": "stable_set", "n_blocks": 15, "n_nodes": 100, "n_edges": 500, "coupling": 20, "topo": "star"},
+    {"problem": "stable_set", "n_blocks": 15, "n_nodes": 100, "n_edges": 500, "coupling": 20, "topo": "path"},
+    {"problem": "stable_set", "n_blocks": 15, "n_nodes": 100, "n_edges": 500, "coupling": 20, "topo": "bintree"},
+    #{"problem": "stable_set", "n_blocks": 15, "n_nodes": 100, "n_edges": 500, "coupling": 30, "topo": "star"},
+    #{"problem": "stable_set", "n_blocks": 15, "n_nodes": 100, "n_edges": 500, "coupling": 30, "topo": "path"},
+    #{"problem": "stable_set", "n_blocks": 15, "n_nodes": 100, "n_edges": 500, "coupling": 30, "topo": "bintree"},
+    #{"problem": "stable_set", "n_blocks": 15, "n_nodes": 100, "n_edges": 500, "coupling": 40, "topo": "star"},
+    #{"problem": "stable_set", "n_blocks": 15, "n_nodes": 100, "n_edges": 500, "coupling": 40, "topo": "path"},
+    #{"problem": "stable_set", "n_blocks": 15, "n_nodes": 100, "n_edges": 500, "coupling": 40, "topo": "bintree"},
     
-    {"problem": "dominating_set", "n_blocks": 15, "n_nodes": 100, "n_edges": 4500, "coupling": 20, "topo": "star"},
-    {"problem": "dominating_set", "n_blocks": 15, "n_nodes": 100, "n_edges": 4500, "coupling": 20, "topo": "path"},
-    {"problem": "dominating_set", "n_blocks": 15, "n_nodes": 100, "n_edges": 4500, "coupling": 20, "topo": "bintree"},
-    {"problem": "dominating_set", "n_blocks": 15, "n_nodes": 100, "n_edges": 4500, "coupling": 30, "topo": "star"},
-    {"problem": "dominating_set", "n_blocks": 15, "n_nodes": 100, "n_edges": 4500, "coupling": 30, "topo": "path"},
-    {"problem": "dominating_set", "n_blocks": 15, "n_nodes": 100, "n_edges": 4500, "coupling": 30, "topo": "bintree"},
-    {"problem": "dominating_set", "n_blocks": 15, "n_nodes": 100, "n_edges": 4500, "coupling": 40, "topo": "star"},
-    {"problem": "dominating_set", "n_blocks": 15, "n_nodes": 100, "n_edges": 4500, "coupling": 40, "topo": "path"},
-    {"problem": "dominating_set", "n_blocks": 15, "n_nodes": 100, "n_edges": 4500, "coupling": 40, "topo": "bintree"},
+    {"problem": "dominating_set", "n_blocks": 15, "n_nodes": 100, "n_edges": 500, "coupling": 20, "topo": "star"},
+    {"problem": "dominating_set", "n_blocks": 15, "n_nodes": 100, "n_edges": 500, "coupling": 20, "topo": "path"},
+    {"problem": "dominating_set", "n_blocks": 15, "n_nodes": 100, "n_edges": 500, "coupling": 20, "topo": "bintree"},
+    #{"problem": "dominating_set", "n_blocks": 15, "n_nodes": 100, "n_edges": 500, "coupling": 30, "topo": "star"},
+    #{"problem": "dominating_set", "n_blocks": 15, "n_nodes": 100, "n_edges": 500, "coupling": 30, "topo": "path"},
+    #{"problem": "dominating_set", "n_blocks": 15, "n_nodes": 100, "n_edges": 500, "coupling": 30, "topo": "bintree"},
+    #{"problem": "dominating_set", "n_blocks": 15, "n_nodes": 100, "n_edges": 500, "coupling": 40, "topo": "star"},
+    #{"problem": "dominating_set", "n_blocks": 15, "n_nodes": 100, "n_edges": 500, "coupling": 40, "topo": "path"},
+    #{"problem": "dominating_set", "n_blocks": 15, "n_nodes": 100, "n_edges": 500, "coupling": 40, "topo": "bintree"},
 ]
 
 SEEDS = [i for i in range(5)]
@@ -58,10 +58,10 @@ SOLVER_CONFIGS = [
     {"name": "CRG_VLag", "type": "crg", "class": VLagrangianStrategy, "args": {}, "time_limit": 1800},
     {"name": "CRG_ExactMLag", "type": "crg", "class": ExactMLagrangianStrategy, "args": {}, "time_limit": 1800},
     {"name": "CRG_ReflectMLag", "type": "crg", "class": ReflectedMLagrangianStrategy, "args": {}, "time_limit": 1800},
-    #{"name": "CRG_MLag-2-tol-6", "type": "crg", "class": MLagrangianStrategy, "args": {"tol":1e-6}, "time_limit": 1800},
+    {"name": "CRG_GeneralMLag", "type": "crg", "class": GeneralizedMLagrangianStrategy, "args": {}, "time_limit": 1800},
     #{"name": "CRG_MLag-3", "type": "crg", "class": MLagrangianStrategy, "args": {"maxdeg":3}, "time_limit": 1800},
-    {"name": "IntegerLShaped", "type": "lshaped", "time_limit": 1800},
-    {"name": "ScenarioDecomp", "type": "scenario", "time_limit": 1800},
+    #{"name": "IntegerLShaped", "type": "lshaped", "time_limit": 1800},
+    #{"name": "ScenarioDecomp", "type": "scenario", "time_limit": 1800},
 ]
 # ========================================================
 
