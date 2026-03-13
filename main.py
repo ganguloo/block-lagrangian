@@ -6,8 +6,8 @@ import datetime
 import math
 from typing import List, Dict, Any
 from src.blocks.stable_set import StableSetBlock
-from src.blocks.matching import MatchingBlock
 from src.blocks.dominating_set import DominatingSetBlock
+from src.blocks.capacity_expansion import CapacityExpansionBlock
 from src.instance.topology import TopologyManager
 from src.strategies.m_lagrangian import MLagrangianStrategy
 from src.strategies.v_lagrangian import VLagrangianStrategy
@@ -20,7 +20,7 @@ from src.solvers.integer_lshaped import IntegerLShapedSolver
 from src.solvers.scenario_decomposition import ScenarioDecompositionSolver
 
 # ==================== CONFIGURATION ====================
-OUTPUT_FILE = "benchmark_results_n100_m2500_b15.csv"
+OUTPUT_FILE = "capacity_expansion3.csv"
 
 INSTANCE_GRID = [
     # Stable Set Cases (Con n_edges explícito. 100 nodos -> max 4950 aristas. 750 aristas ~ 15% densidad)
@@ -38,39 +38,25 @@ INSTANCE_GRID = [
     #{"problem": "dominating_set", "n_blocks": 7, "n_nodes": 80, "n_edges": 320, "coupling": 30, "topo": "star"},
     #{"problem": "dominating_set", "n_blocks": 7, "n_nodes": 80, "n_edges": 320, "coupling": 30, "topo": "path"},
     #{"problem": "dominating_set", "n_blocks": 7, "n_nodes": 80, "n_edges": 320, "coupling": 30, "topo": "bintree"},
-    
-    {"problem": "stable_set", "n_blocks": 15, "n_nodes": 100, "n_edges": 2500, "coupling": 20, "topo": "star"},
-    {"problem": "stable_set", "n_blocks": 15, "n_nodes": 100, "n_edges": 2500, "coupling": 20, "topo": "path"},
-    {"problem": "stable_set", "n_blocks": 15, "n_nodes": 100, "n_edges": 2500, "coupling": 20, "topo": "bintree"},
-    {"problem": "stable_set", "n_blocks": 15, "n_nodes": 100, "n_edges": 2500, "coupling": 30, "topo": "star"},
-    {"problem": "stable_set", "n_blocks": 15, "n_nodes": 100, "n_edges": 2500, "coupling": 30, "topo": "path"},
-    {"problem": "stable_set", "n_blocks": 15, "n_nodes": 100, "n_edges": 2500, "coupling": 30, "topo": "bintree"},
-    {"problem": "stable_set", "n_blocks": 15, "n_nodes": 100, "n_edges": 2500, "coupling": 40, "topo": "star"},
-    {"problem": "stable_set", "n_blocks": 15, "n_nodes": 100, "n_edges": 2500, "coupling": 40, "topo": "path"},
-    {"problem": "stable_set", "n_blocks": 15, "n_nodes": 100, "n_edges": 2500, "coupling": 40, "topo": "bintree"},
-    
-    {"problem": "dominating_set", "n_blocks": 15, "n_nodes": 100, "n_edges": 2500, "coupling": 20, "topo": "star"},
-    {"problem": "dominating_set", "n_blocks": 15, "n_nodes": 100, "n_edges": 2500, "coupling": 20, "topo": "path"},
-    {"problem": "dominating_set", "n_blocks": 15, "n_nodes": 100, "n_edges": 2500, "coupling": 20, "topo": "bintree"},
-    {"problem": "dominating_set", "n_blocks": 15, "n_nodes": 100, "n_edges": 2500, "coupling": 30, "topo": "star"},
-    {"problem": "dominating_set", "n_blocks": 15, "n_nodes": 100, "n_edges": 2500, "coupling": 30, "topo": "path"},
-    {"problem": "dominating_set", "n_blocks": 15, "n_nodes": 100, "n_edges": 2500, "coupling": 30, "topo": "bintree"},
-    {"problem": "dominating_set", "n_blocks": 15, "n_nodes": 100, "n_edges": 2500, "coupling": 40, "topo": "star"},
-    {"problem": "dominating_set", "n_blocks": 15, "n_nodes": 100, "n_edges": 2500, "coupling": 40, "topo": "path"},
-    {"problem": "dominating_set", "n_blocks": 15, "n_nodes": 100, "n_edges": 2500, "coupling": 40, "topo": "bintree"},
+
+    {"problem": "capacity_expansion", "n_blocks": 15, "n_nodes": 50, "n_edges": 0, "coupling": 30, "topo": "path"},
+    {"problem": "capacity_expansion", "n_blocks": 15, "n_nodes": 100, "n_edges": 0, "coupling": 30, "topo": "path"},
+    {"problem": "capacity_expansion", "n_blocks": 15, "n_nodes": 200, "n_edges": 0, "coupling": 30, "topo": "path"},
+    {"problem": "capacity_expansion", "n_blocks": 15, "n_nodes": 500, "n_edges": 0, "coupling": 30, "topo": "path"},
+
 ]
 
-SEEDS = [i for i in range(5)]
+SEEDS = [i for i in range(2)]
 
 SOLVER_CONFIGS = [
-    #{"name": "Monolithic", "type": "mono", "time_limit": 1800},
-    {"name": "CRG_VLag", "type": "crg", "class": VLagrangianStrategy, "args": {}, "time_limit": 1800},
-    {"name": "CRG_ExactMLag", "type": "crg", "class": ExactMLagrangianStrategy, "args": {}, "time_limit": 1800},
-    {"name": "CRG_ReflectMLag", "type": "crg", "class": ReflectedMLagrangianStrategy, "args": {}, "time_limit": 1800},
+    {"name": "Monolithic", "type": "mono", "time_limit": 1800},
+    #{"name": "CRG_VLag", "type": "crg", "class": VLagrangianStrategy, "args": {}, "time_limit": 3600},
+    #{"name": "CRG_ExactMLag", "type": "crg", "class": ExactMLagrangianStrategy, "args": {}, "time_limit": 3600},
+    #{"name": "CRG_ReflectMLag", "type": "crg", "class": ReflectedMLagrangianStrategy, "args": {}, "time_limit": 1800},
     #{"name": "CRG_MLag-2-tol-6", "type": "crg", "class": MLagrangianStrategy, "args": {"tol":1e-6}, "time_limit": 1800},
     #{"name": "CRG_MLag-3", "type": "crg", "class": MLagrangianStrategy, "args": {"maxdeg":3}, "time_limit": 1800},
-    {"name": "IntegerLShaped", "type": "lshaped", "time_limit": 1800},
-    {"name": "ScenarioDecomp", "type": "scenario", "time_limit": 1800},
+    #{"name": "IntegerLShaped", "type": "lshaped", "time_limit": 1800},
+    #{"name": "ScenarioDecomp", "type": "scenario", "time_limit": 1800},
 ]
 # ========================================================
 
@@ -165,16 +151,15 @@ def run_experiment():
 
                         if problem_type == "stable_set":
                             b = StableSetBlock(i, n_nodes, num_edges=n_edges, seed=seed+i, obj_factor=obj_factor)
-                            blocks.append(b)
                             block_sizes.append(n_nodes)
-                        elif problem_type == "matching":
-                            b = MatchingBlock(i, n_nodes, num_edges=n_edges, seed=seed+i, probability=obj_factor)
-                            blocks.append(b)
-                            block_sizes.append(b.num_edges)
                         elif problem_type == "dominating_set":  
                             b = DominatingSetBlock(i, n_nodes, num_edges=n_edges, seed=seed+i, obj_factor=obj_factor)
-                            blocks.append(b)
                             block_sizes.append(n_nodes)
+                        elif problem_type == "capacity_expansion":
+                            b = CapacityExpansionBlock(i, num_facilities=coupling, num_clients=n_nodes, seed=seed+i, obj_factor=obj_factor)
+                            block_sizes.append(2 * coupling)
+                        
+                        blocks.append(b)
 
                     topology = TopologyManager(block_sizes)
 
