@@ -160,6 +160,8 @@ class CRGManager:
             "gap": 0.0
         }
 
+        cut_history_log = []
+
         start_total = time.time()
         
         try:
@@ -292,8 +294,12 @@ class CRGManager:
                                 target_dict[sig] = target_dict.get(sig, 0.0) + var.X
 
                 new_constraints = []
+                iter_cuts_record = {}
+
                 for (u, v), (w_u, w_v) in w_sol.items():
                     violations = self.strategy.separate(w_u, w_v)
+                    added_signatures = []
+
                     for sig in violations:
                         if (u, v, sig) not in self.cut_registry:
                             cut_name = f"cut_{u}_{v}_{len(self.cut_registry)}"
@@ -314,6 +320,17 @@ class CRGManager:
                             if (u,v) not in self.active_cuts_by_edge: self.active_cuts_by_edge[u,v] = []
                             self.active_cuts_by_edge[u,v].append((cut_id, sig))
                             cuts_added_iter += 1
+                            added_signatures.append(sig)
+
+                    if added_signatures:
+                        iter_cuts_record[f"{u}-{v}"] = added_signatures
+
+                if iter_cuts_record:
+                    cut_history_log.append({
+                        "iter_outer": metrics["iter_outer"],
+                        "time": time.time() - start_total,
+                        "edges": iter_cuts_record
+                    })
 
                 metrics["cuts_added"] += cuts_added_iter
 
@@ -350,4 +367,7 @@ class CRGManager:
             denom = abs(metrics["dual_bound"])
             if denom < 1e-10: denom = 1.0 
             metrics["gap"] = abs(metrics["dual_bound"] - metrics["primal_bound"]) / denom
+
+        metrics["cut_history"] = cut_history_log
+        
         return metrics

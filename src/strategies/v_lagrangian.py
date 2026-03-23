@@ -5,7 +5,7 @@ from .base_strategy import SeparationStrategy
 import math
 
 class VLagrangianStrategy(SeparationStrategy):
-    def __init__(self, radius_factor: float = 0.0, tolerance: float = 1e-6, factor: float = 0.5, single_threaded: bool = False):
+    def __init__(self, radius_factor: float = 0.0, tolerance: float = 1e-6, factor: float = 1.0, single_threaded: bool = False):
         super().__init__(single_threaded=single_threaded)
         self.radius_factor = radius_factor
         self.tolerance = tolerance

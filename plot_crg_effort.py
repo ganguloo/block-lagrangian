@@ -123,11 +123,11 @@ def main():
                 ax2.scatter(data["outer_ends"], outer_cols_y, color=color, marker='X', s=100, zorder=5)
 
         # Configuración del gráfico
-        plt.title(f"Esfuerzo Computacional CRG - {instance}", fontsize=14)
-        ax1.set_xlabel("Tiempo (segundos)", fontsize=12)
+        plt.title(f"CRG - {instance}", fontsize=14)
+        ax1.set_xlabel("Time (seconds)", fontsize=12)
         
-        ax1.set_ylabel("Cantidad de Iteraciones Internas", fontsize=12)
-        ax2.set_ylabel("Columnas Totales Agregadas", fontsize=12)
+        ax1.set_ylabel("Inner iterations", fontsize=12)
+        ax2.set_ylabel("Total columns", fontsize=12)
         
         # Grid alineado solo al eje primario para no saturar visualmente
         ax1.grid(True, linestyle=':', alpha=0.7)

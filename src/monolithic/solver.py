@@ -15,7 +15,7 @@ class MonolithicSolver:
             self.model.Params.Threads = 1
 
     def build_and_solve(self, time_limit=None, work_limit=None) -> Dict[str, Any]:
-        total_obj = gp.LinExpr()
+        total_obj = gp.QuadExpr()
         for block in self.blocks:
             block.build_model(parent_model=self.model)
             if hasattr(block, 'local_objective_expr'):
