@@ -5,7 +5,7 @@ from .base_block import AbstractBlock
 
 class StableSetBlock(AbstractBlock):
     def __init__(self, block_id: int, num_nodes: int, num_edges: int, 
-                    seed: int = 42, weights: List[float] = None, obj_factor: float = 1.0):
+                    seed: int = 42, obj_factor: float = 1.0):
         
         super().__init__(block_id, name=f"StableSet_{block_id}", obj_factor=obj_factor)
         self.num_nodes = num_nodes
@@ -13,10 +13,7 @@ class StableSetBlock(AbstractBlock):
         self.edge_set: Set[Tuple[int, int]] = set(tuple(sorted(e)) for e in self.edges)
         
         rng = np.random.default_rng(seed + block_id)
-        if weights is None:
-            self.weights = [1 for _ in range(num_nodes)] #list(rng.integers(1, 11, size=num_nodes))
-        else:
-            self.weights = weights
+        self.weights = [1 for _ in range(num_nodes)] #list(rng.integers(1, 11, size=num_nodes))
 
     def _generate_graph(self, n, m, seed):
         rng = np.random.default_rng(seed)

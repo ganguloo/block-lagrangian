@@ -4,22 +4,14 @@ from typing import List, Tuple, Optional
 from .base_block import AbstractBlock
 
 class DominatingSetBlock(AbstractBlock):
-    def __init__(self, block_id: int, num_nodes: int = 0, num_edges: int = 0, seed: int = 42, 
-                 global_nodes: Optional[List[int]] = None, edges: Optional[List[Tuple[int, int]]] = None,
+    def __init__(self, block_id: int, num_nodes: int, num_edges: int, seed: int = 42, 
                  obj_factor: float = 1.0):
         
         super().__init__(block_id, name=f"DomSet_{block_id}", obj_factor=obj_factor)
         
-        if edges is not None:
-            # Modo Explícito
-            self.global_nodes = sorted(list(set(global_nodes)))
-            self.edges = edges
-            self.num_nodes = len(self.global_nodes)
-        else:
-            # Modo Auto-generación (Compatible con main.py)
-            self.num_nodes = num_nodes
-            self.global_nodes = list(range(num_nodes)) 
-            self.edges = self._generate_graph(num_nodes, num_edges, seed)
+        self.num_nodes = num_nodes
+        self.global_nodes = list(range(num_nodes)) 
+        self.edges = self._generate_graph(num_nodes, num_edges, seed)
             
         # Construir lista de adyacencia local
         self.adj = {u: [] for u in self.global_nodes}

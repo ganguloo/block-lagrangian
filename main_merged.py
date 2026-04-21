@@ -27,26 +27,24 @@ from src.solvers.integer_lshaped import IntegerLShapedSolver
 from src.solvers.scenario_decomposition import ScenarioDecompositionSolver
 import gurobipy as gp
 from src.blocks.binary_qp import QPBlock
-from src.instance.boxqp_generator import generate_and_decompose_boxqp
 
 # ==================== CONFIGURATION ====================
 OUTPUT_FILE = "qp.csv"
 
 INSTANCE_GRID = [
-    {"problem": "boxqp", "n_nodes": 100, "density": 0.2, "bias": 0, "topo": "tw_fill_in", "linearize": True},
-    {"problem": "boxqp", "n_nodes": 100, "density": 0.2, "bias": 20, "topo": "tw_fill_in", "linearize": True},
-    {"problem": "boxqp", "n_nodes": 100, "density": 0.2, "bias": -20, "topo": "tw_fill_in", "linearize": True},
+    # Puedes crear instancias muy dispersas usando un bias negativo:
+    {"problem": "boxqp", "n_blocks": 8, "n_nodes": 60, "n_edges": 600, "coupling": 20, "topo": "random_tree", "bias": 0, "linearize": True},
+    {"problem": "boxqp", "n_blocks": 8, "n_nodes": 60, "n_edges": 600, "coupling": 40, "topo": "random_tree", "bias": 0, "linearize": True},
 ]
 
-SEEDS = [i for i in range(3)]
+SEEDS = [i for i in range(2)]
 
 SOLVER_CONFIGS = [
-    {"name": "Monolithic", "type": "mono", "time_limit": 300},
-    {"name": "CRG_VLag_f060", "type": "crg", "class": VLagrangianStrategy, "args": {"factor":0.6}, "time_limit": 300},
-    {"name": "CRG_ExactMLag_f030", "type": "crg", "class": ExactMLagrangianStrategy, "args": {"factor":0.3}, "time_limit": 300},
-    {"name": "CRG_ReflectMLag_f030", "type": "crg", "class": ReflectedMLagrangianStrategy, "args": {"factor":0.3}, "time_limit": 300},
-    {"name": "CRG_GeneralMLag_f030", "type": "crg", "class": GeneralizedMLagrangianStrategy, "args": {"factor":0.3}, "time_limit": 300},
-    #{"name": "CRG_MLag-3", "type": "crg", "class": MLagrangianStrategy, "args": {"maxdeg":3}, "time_limit": 1800},
+    {"name": "Monolithic", "type": "mono", "time_limit": 1800},
+    {"name": "CRG_VLag_f060", "type": "crg", "class": VLagrangianStrategy, "args": {"factor":0.6}, "time_limit": 1800},
+    {"name": "CRG_ExactMLag_f030", "type": "crg", "class": ExactMLagrangianStrategy, "args": {"factor":0.3}, "time_limit": 1800},
+    {"name": "CRG_ReflectMLag_f030", "type": "crg", "class": ReflectedMLagrangianStrategy, "args": {"factor":0.3}, "time_limit": 1800},
+    {"name": "CRG_GeneralMLag_f030", "type": "crg", "class": GeneralizedMLagrangianStrategy, "args": {"factor":0.3}, "time_limit": 1800},
     #{"name": "IntegerLShaped", "type": "lshaped", "time_limit": 1800},
     #{"name": "ScenarioDecomp", "type": "scenario", "time_limit": 1800},
 ]
@@ -145,68 +143,38 @@ def run_single_experiment(inst_conf, seed, solver_conf, single_threaded, logdir)
                 blocks = []
                 block_sizes = []
 
-                if problem_type == "boxqp":
-                    # 1. Crear la instancia de QP ANTES del loop
-                    data = generate_and_decompose_boxqp(
-                        n=inst_conf.get("n_nodes", 50),
-                        density=inst_conf.get("density", 0.1),
-                        bias=inst_conf.get("bias", 0.0),
-                        seed=seed
-                    )
-                    
-                    inst_conf["n_blocks"] = data["num_blocks"]
-                    inst_conf["n_edges"] = len(data["topology_edges"])
-                    inst_conf["treewidth"] = data["treewidth"]
-                    
-                    # 2. Agregar los bloques individualmente
-                    for i in range(data["num_blocks"]):
+
+                for i in range(n_blocks):
+                    obj_factor = 1.0
+                    if is_stochastic:
+                        if topo_type == "star":
+                            obj_factor = n_blocks - 1 if i == 0 else 1.0
+                        elif topo_type == "bintree":
+                            stages = int(math.log2(n_blocks + 1))
+                            t = math.floor(math.log2(i + 1)) + 1
+                            obj_factor = 2 ** (stages - t)
+
+                    if problem_type == "stable_set":
+                        b = StableSetBlock(i, n_nodes, num_edges=n_edges, seed=seed+i, obj_factor=obj_factor)
+                        block_sizes.append(n_nodes)
+                    elif problem_type == "dominating_set":  
+                        b = DominatingSetBlock(i, n_nodes, num_edges=n_edges, seed=seed+i, obj_factor=obj_factor)
+                        block_sizes.append(n_nodes)
+                    elif problem_type == "capacity_expansion":
+                        b = CapacityExpansionBlock(i, num_facilities=coupling, num_clients=n_nodes, seed=seed+i, obj_factor=obj_factor)
+                        block_sizes.append(2 * coupling)
+                    elif problem_type == "boxqp":
                         b = QPBlock(
                             block_id=i,
-                            bag_vars=data["bags"][i],
-                            local_Q=data["local_Q"][i],
-                            local_c=data["local_c"][i],
+                            n_nodes=n_nodes,
+                            num_edges=n_edges,
+                            bias=inst_conf.get("bias", 0.0),
+                            seed=seed+i,
                             linearize=inst_conf.get("linearize", True)
                         )
-                        blocks.append(b)
-                        block_sizes.append(len(data["bags"][i]))
-                        
-                    # 3. Inicializar la topología y cruzar variables usando add_coupling
-                    topology = TopologyManager(block_sizes)
-                    
-                    for u, v in data["topology_edges"]:
-                        # Las variables compartidas entre los bloques u y v
-                        bag_u = set(data["bags"][u])
-                        bag_v = set(data["bags"][v])
-                        shared_vars = list(bag_u.intersection(bag_v))
-                        
-                        # Como las llaves de self.vars en QPBlock son los IDs globales, 
-                        # ambos bloques usan los mismos índices (shared_vars)
-                        if shared_vars:  # Solo agregamos el acople si realmente comparten variables
-                            topology.add_coupling(u, v, shared_vars, shared_vars)
-
-                else:
-                    # FLUJO ORIGINAL para el resto de los problemas
-                    for i in range(n_blocks):
-                        obj_factor = 1.0
-                        if is_stochastic:
-                            if topo_type == "star":
-                                obj_factor = n_blocks - 1 if i == 0 else 1.0
-                            elif topo_type == "bintree":
-                                stages = int(math.log2(n_blocks + 1))
-                                t = math.floor(math.log2(i + 1)) + 1
-                                obj_factor = 2 ** (stages - t)
-
-                        if problem_type == "stable_set":
-                            b = StableSetBlock(i, n_nodes, num_edges=n_edges, seed=seed+i, obj_factor=obj_factor)
-                            block_sizes.append(n_nodes)
-                        elif problem_type == "dominating_set":  
-                            b = DominatingSetBlock(i, n_nodes, num_edges=n_edges, seed=seed+i, obj_factor=obj_factor)
-                            block_sizes.append(n_nodes)
-                        elif problem_type == "capacity_expansion":
-                            b = CapacityExpansionBlock(i, num_facilities=coupling, num_clients=n_nodes, seed=seed+i, obj_factor=obj_factor)
-                            block_sizes.append(2 * coupling)
-                        
-                        blocks.append(b)
+                        block_sizes.append(n_nodes)
+                                        
+                    blocks.append(b)
 
                     topology = TopologyManager(block_sizes)
 
@@ -216,6 +184,8 @@ def run_single_experiment(inst_conf, seed, solver_conf, single_threaded, logdir)
                         topology.create_star(0, coupling)
                     elif topo_type == "bintree":
                         topology.create_bintree(coupling)
+                    elif topo_type == "random_tree":
+                        topology.create_random_tree(coupling, seed=seed)
 
                 # ----- EJECUCIÓN DEL SOLVER -----
                 if solver_conf["type"] == "mono":

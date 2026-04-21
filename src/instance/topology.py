@@ -1,6 +1,7 @@
-
 from dataclasses import dataclass
 from typing import List, Dict, Tuple, Union
+import networkx as nx
+import random
 
 @dataclass
 class EdgeInfo:
@@ -81,3 +82,21 @@ class TopologyManager:
                     raise ValueError(f"Child Block {child} too small")
                 indices_v = list(range(coupling_size))
                 self.add_coupling(i, child, indices_u, indices_v)
+
+    def create_random_tree(self, coupling_size: int, seed: int):       
+        # Generar un árbol determinista sobre los IDs de los bloques (0 a b-1)
+        tree = nx.generators.random_unlabeled_tree(self.num_blocks, seed=seed)
+        rng = random.Random(seed)
+        
+        for u, v in tree.edges():
+            size_u = self._get_size(u)
+            size_v = self._get_size(v)
+            
+            if size_u < coupling_size or size_v < coupling_size:
+                raise ValueError(f"Los bloques {u} o {v} son demasiado pequeños para un coupling de {coupling_size}")
+            
+            # Elegir 'c' variables al azar del bloque u y 'c' del bloque v
+            indices_u = rng.sample(range(size_u), coupling_size)
+            indices_v = rng.sample(range(size_v), coupling_size)
+            
+            self.add_coupling(u, v, indices_u, indices_v)
