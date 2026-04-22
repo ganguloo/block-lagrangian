@@ -10,7 +10,7 @@ from ..instance.topology import TopologyManager
 from datetime import datetime
 
 class ScenarioWorker(threading.Thread):
-    def __init__(self, k, topology, center_block_copy, leaf_block, K, rho, boundary_indices, in_q, out_q, semaphore, num_threads): # <-- Agregar num_threads
+    def __init__(self, k, topology, center_block_copy, leaf_block, K, rho, boundary_indices, env, in_q, out_q, semaphore):
         super().__init__()
         self.k = k
         self.topology = topology
@@ -19,151 +19,152 @@ class ScenarioWorker(threading.Thread):
         self.K = K
         self.rho = rho
         self.boundary_indices = boundary_indices
+        self.env = env
         self.in_q = in_q
         self.out_q = out_q
         self.semaphore = semaphore
-        self.num_threads = num_threads # <-- GUARDAR
 
-        self.env = None
         self.model = None
         self.scenario_center_var_names = {}
 
     def run(self):
-        # 1. Environment & Model initialization inside the worker thread
-        self.env = gp.Env(empty=True)
-        self.env.setParam("OutputFlag", 0)
-        self.env.setParam("Threads", self.num_threads) # <--- AJUSTE DINÁMICO
-        self.env.start()
-        self.model = gp.Model(f"Scenario_{self.k}", env=self.env)
+        try:
+            self.model = gp.Model(f"Scenario_{self.k}", env=self.env)
 
-        # 2. Build Blocks
-        self.center_block.build_model(parent_model=self.model, prefix="C")
-        self.model.update()
+            # 2. Build Blocks
+            self.center_block.build_model(parent_model=self.model, prefix="C")
+            self.model.update()
 
-        all_center_vars = self.center_block.vars
-        self.scenario_center_var_names = {idx: all_center_vars[idx].VarName for idx in self.boundary_indices}
+            all_center_vars = self.center_block.vars
+            self.scenario_center_var_names = {idx: all_center_vars[idx].VarName for idx in self.boundary_indices}
 
-        self.leaf_block.build_model(parent_model=self.model, prefix="L")
-        self.model.update()
+            self.leaf_block.build_model(parent_model=self.model, prefix="L")
+            self.model.update()
 
-        # 3. Coupling Constraints
-        edge = self.topology.get_edge(self.center_block.block_id, self.leaf_block.block_id)
-        c_vars = [self.model.getVarByName(self.scenario_center_var_names[i]) for i in edge.vars_u]
-        l_vars = [self.leaf_block.vars[i] for i in edge.vars_v]
+            # 3. Coupling Constraints
+            edge = self.topology.get_edge(self.center_block.block_id, self.leaf_block.block_id)
+            c_vars = [self.model.getVarByName(self.scenario_center_var_names[i]) for i in edge.vars_u]
+            l_vars = [self.leaf_block.vars[i] for i in edge.vars_v]
 
-        for vc, vl in zip(c_vars, l_vars):
-            self.model.addConstr(vc == vl, name=f"couple_{vc.VarName}_{vl.VarName}")
+            for vc, vl in zip(c_vars, l_vars):
+                self.model.addConstr(vc == vl, name=f"couple_{vc.VarName}_{vl.VarName}")
 
-        # 4. Objective Definition
-        total_obj = gp.LinExpr()
-        if self.center_block.local_objective_expr:
-            total_obj.add(self.center_block.local_objective_expr, 1.0 / self.K)
-        if self.leaf_block.local_objective_expr:
-            total_obj.add(self.leaf_block.local_objective_expr, 1.0)
+            # 4. Objective Definition
+            total_obj = gp.LinExpr()
+            if self.center_block.local_objective_expr:
+                total_obj.add(self.center_block.local_objective_expr, 1.0 / self.K)
+            if self.leaf_block.local_objective_expr:
+                total_obj.add(self.leaf_block.local_objective_expr, 1.0)
 
-        self.model.setObjective(total_obj, gp.GRB.MAXIMIZE)
-        self.model.update()
+            self.model.setObjective(total_obj, gp.GRB.MAXIMIZE)
+            self.model.update()
 
-        # 5. Event Loop
-        while True:
-            cmd, payload = self.in_q.get()
+            # 5. Event Loop
+            while True:
+                cmd, payload = self.in_q.get()
 
-            try:
-                if cmd == "STOP":
-                    # FIX: Enviar ACK antes de romper el bucle para no bloquear al Main
-                    self.out_q.put((self.k, "STOP_ACK", True))
-                    break
-
-                elif cmd == "SOLVE_LP":
-                    r_model = self.model.relax()
-                    r_model.Params.OutputFlag = 0
-                    with self.semaphore:
-                        r_model.optimize()
-                    res = {}
-                    if r_model.Status == gp.GRB.OPTIMAL:
-                        for idx, name in self.scenario_center_var_names.items():
-                            v = r_model.getVarByName(name)
-                            res[idx] = v.X if v else 0.0
-                    self.out_q.put((self.k, "LP", res))
-
-                elif cmd == "APPLY_BIAS":
-                    avg_x, lp_x_k = payload
-                    current_obj = self.model.getObjective()
-                    penalty_expr = gp.LinExpr()
-
-                    for idx, name in self.scenario_center_var_names.items():
-                        var = self.model.getVarByName(name)
-                        x_val = lp_x_k.get(idx, 0.0)
-                        x_avg = avg_x[idx]
-                        mult = self.rho * (x_avg - x_val)
-                        if abs(mult) > 1e-6:
-                            penalty_expr.add(var, mult)
-
-                    current_obj.add(penalty_expr)
-                    self.model.setObjective(current_obj, gp.GRB.MAXIMIZE)
-                    self.model.update()
-                    self.out_q.put((self.k, "BIAS_DONE", True))
-
-                elif cmd == "SOLVE_MIP":
-                    with self.semaphore:
-                        self.model.optimize()
-                    if self.model.Status == gp.GRB.OPTIMAL:
-                        x_sol = {}
+                try:
+                    if cmd == "STOP":
+                        # FIX: Enviar ACK antes de romper el bucle para no bloquear al Main
+                        self.out_q.put((self.k, "STOP_ACK", True))
+                        break
+    
+                    elif cmd == "SOLVE_LP":
+                        r_model = None
+                        try:
+                            r_model = self.model.relax()
+                            r_model.Params.OutputFlag = 0
+                            with self.semaphore:
+                                r_model.optimize()
+                            res = {}
+                            if r_model.Status == gp.GRB.OPTIMAL:
+                                for idx, name in self.scenario_center_var_names.items():
+                                    v = r_model.getVarByName(name)
+                                    res[idx] = v.X if v else 0.0
+                            self.out_q.put((self.k, "LP", res))
+                        finally:
+                            if r_model is not None:
+                                r_model.dispose()
+    
+                    elif cmd == "APPLY_BIAS":
+                        avg_x, lp_x_k = payload
+                        current_obj = self.model.getObjective()
+                        penalty_expr = gp.LinExpr()
+    
                         for idx, name in self.scenario_center_var_names.items():
                             var = self.model.getVarByName(name)
-                            x_sol[idx] = int(round(var.X))
-                        self.out_q.put((self.k, "MIP", (self.model.ObjVal, x_sol)))
-                    else:
-                        self.out_q.put((self.k, "MIP", (-1e9, None)))
-
-                elif cmd == "EVALUATE":
-                    x_cand_items = payload
-                    original_bounds = []
-                    for idx, val in x_cand_items:
-                        name = self.scenario_center_var_names[idx]
-                        v = self.model.getVarByName(name)
-                        original_bounds.append((v, v.LB, v.UB))
-                        v.LB = val
-                        v.UB = val
-
-                    self.model.update()
-                    with self.semaphore:
-                        self.model.optimize()
-
-                    val = 0.0
-                    feasible = False
-                    if self.model.Status == gp.GRB.OPTIMAL:
-                        val = self.model.ObjVal
-                        feasible = True
-
-                    for v, lb, ub in original_bounds:
-                        v.LB = lb
-                        v.UB = ub
-                    self.model.update()
-
-                    self.out_q.put((self.k, "EVAL", (val, feasible)))
-
-                elif cmd == "ADD_CUT":
-                    x_cand = payload
-                    lhs = gp.LinExpr()
-                    for idx, val in x_cand.items():
-                        name = self.scenario_center_var_names[idx]
-                        var = self.model.getVarByName(name)
-                        if val > 0.5:
-                            lhs.addConstant(1.0)
-                            lhs.add(var, -1.0)
+                            x_val = lp_x_k.get(idx, 0.0)
+                            x_avg = avg_x[idx]
+                            mult = self.rho * (x_avg - x_val)
+                            if abs(mult) > 1e-6:
+                                penalty_expr.add(var, mult)
+    
+                        current_obj.add(penalty_expr)
+                        self.model.setObjective(current_obj, gp.GRB.MAXIMIZE)
+                        self.model.update()
+                        self.out_q.put((self.k, "BIAS_DONE", True))
+    
+                    elif cmd == "SOLVE_MIP":
+                        with self.semaphore:
+                            self.model.optimize()
+                        if self.model.Status == gp.GRB.OPTIMAL:
+                            x_sol = {}
+                            for idx, name in self.scenario_center_var_names.items():
+                                var = self.model.getVarByName(name)
+                                x_sol[idx] = int(round(var.X))
+                            self.out_q.put((self.k, "MIP", (self.model.ObjVal, x_sol)))
                         else:
-                            lhs.add(var, 1.0)
-                    self.model.addConstr(lhs >= 1.0, name="NoGood")
-                    self.model.update()
-                    self.out_q.put((self.k, "CUT_DONE", True))
-
-            except Exception as e:
-                # Prevenir deadlocks si un worker lanza una excepción interna
-                self.out_q.put((self.k, "ERROR", None))
-                print(f"Worker {self.k} Error: {e}")
-
-        self.env.dispose()
+                            self.out_q.put((self.k, "MIP", (-1e9, None)))
+    
+                    elif cmd == "EVALUATE":
+                        x_cand_items = payload
+                        original_bounds = []
+                        for idx, val in x_cand_items:
+                            name = self.scenario_center_var_names[idx]
+                            v = self.model.getVarByName(name)
+                            original_bounds.append((v, v.LB, v.UB))
+                            v.LB = val
+                            v.UB = val
+    
+                        self.model.update()
+                        with self.semaphore:
+                            self.model.optimize()
+    
+                        val = 0.0
+                        feasible = False
+                        if self.model.Status == gp.GRB.OPTIMAL:
+                            val = self.model.ObjVal
+                            feasible = True
+    
+                        for v, lb, ub in original_bounds:
+                            v.LB = lb
+                            v.UB = ub
+                        self.model.update()
+    
+                        self.out_q.put((self.k, "EVAL", (val, feasible)))
+    
+                    elif cmd == "ADD_CUT":
+                        x_cand = payload
+                        lhs = gp.LinExpr()
+                        for idx, val in x_cand.items():
+                            name = self.scenario_center_var_names[idx]
+                            var = self.model.getVarByName(name)
+                            if val > 0.5:
+                                lhs.addConstant(1.0)
+                                lhs.add(var, -1.0)
+                            else:
+                                lhs.add(var, 1.0)
+                        self.model.addConstr(lhs >= 1.0, name="NoGood")
+                        self.model.update()
+                        self.out_q.put((self.k, "CUT_DONE", True))
+                except Exception as e:
+                    # Prevenir deadlocks si un worker lanza una excepción interna
+                    self.out_q.put((self.k, "ERROR", None))
+                    print(f"Worker {self.k} Error: {e}")
+        finally:
+            if self.model is not None:
+                self.model.dispose()
+                self.model = None
 
 class ScenarioDecompositionSolver:
     def __init__(self, topology: TopologyManager, blocks: List[AbstractBlock], rho: float = 1.0, single_threaded: bool = False):
@@ -199,13 +200,21 @@ class ScenarioDecompositionSolver:
         self.in_queues = [queue.Queue() for _ in range(self.K)]
         self.out_queue = queue.Queue()
         self.workers = []
+        self.worker_envs = []
+
+        for _ in range(self.K):
+            env = gp.Env(empty=True)
+            env.setParam("OutputFlag", 0)
+            env.setParam("Threads", self.num_threads)
+            env.start()
+            self.worker_envs.append(env)
 
         for k, leaf in enumerate(self.leaf_blocks):
             center_copy = copy.deepcopy(self.center_block)
             w = ScenarioWorker(
                 k, self.topology, center_copy, leaf, self.K, self.rho, 
-                self.sorted_boundary_indices, self.in_queues[k], self.out_queue,
-                self.semaphore, self.num_threads # <-- PASAR A WORKER
+                self.sorted_boundary_indices, self.worker_envs[k], self.in_queues[k], self.out_queue,
+                self.semaphore
             )
             w.start()
             self.workers.append(w)
@@ -383,6 +392,8 @@ class ScenarioDecompositionSolver:
             self._broadcast_and_wait("STOP")
             for w in self.workers:
                 w.join()
+            for env in self.worker_envs:
+                env.dispose()
 
         metrics["total_time"] = time.time() - start_time
         print(f"--- Finished Scenario Decomposition: {metrics['status']} ---")

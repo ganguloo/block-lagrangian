@@ -9,111 +9,109 @@ from ..blocks.base_block import AbstractBlock
 from ..instance.topology import TopologyManager
 
 class LeafWorker(threading.Thread):
-    def __init__(self, leaf_idx, leaf_block_copy, var_names, in_q, out_q, semaphore, num_threads): # <-- Agregar num_threads
+    def __init__(self, leaf_idx, leaf_block_copy, var_names, env, in_q, out_q, semaphore):
         super().__init__()
         self.leaf_idx = leaf_idx
         self.leaf_block = leaf_block_copy
         self.var_names = var_names
+        self.env = env
         self.in_q = in_q
         self.out_q = out_q
         self.semaphore = semaphore
-        self.num_threads = num_threads # <-- GUARDAR
 
-        self.env = None
         self.m_lp = None
         self.m_mip = None
         self.link_constrs_lp = []
         self.link_constrs_mip = []
 
     def run(self):
-        # 1. Entorno Dedicado
-        self.env = gp.Env(empty=True)
-        self.env.setParam("OutputFlag", 0)
-        self.env.setParam("Threads", self.num_threads) # <--- AJUSTE DINÁMICO
-        self.env.start()
-        
-        # 2. Modelo LP (Benders)
-        m_lp_temp = gp.Model(f"Leaf_{self.leaf_idx}_LP_temp", env=self.env)
-        self.leaf_block.build_model(parent_model=m_lp_temp)
-        m_lp_temp.setObjective(self.leaf_block.local_objective_expr, gp.GRB.MAXIMIZE)
-        m_lp_temp.update()
-        
-        self.m_lp = m_lp_temp.relax()
-        self.m_lp.ModelName = f"Leaf_{self.leaf_idx}_LP"
-        
-        # Estabilidad de Rayos Farkas
-        self.m_lp.Params.Method = 1  # Forzar Dual Simplex
-        self.m_lp.Params.InfUnbdInfo = 1 
-        self.m_lp.Params.DualReductions = 0 
-        self.m_lp.update()
-        
-        for name in self.var_names:
-            v_in_lp = self.m_lp.getVarByName(name)
-            c = self.m_lp.addConstr(v_in_lp == 0.0, name=f"link_{name}")
-            self.link_constrs_lp.append(c)
-            # Quitar cota superior para que los duales representen el acople correctamente
-            v_in_lp.UB = gp.GRB.INFINITY 
-        self.m_lp.update()
-        
-        # 3. Modelo MIP (Integer L-Shaped)
-        self.m_mip = gp.Model(f"Leaf_{self.leaf_idx}_MIP", env=self.env)
-        self.leaf_block.build_model(parent_model=self.m_mip)
-        self.m_mip.setObjective(self.leaf_block.local_objective_expr, gp.GRB.MAXIMIZE)
-        self.m_mip.update()
-        
-        for name in self.var_names:
-            v_in_mip = self.m_mip.getVarByName(name)
-            c = self.m_mip.addConstr(v_in_mip == 0.0, name=f"link_{name}")
-            self.link_constrs_mip.append(c)
-        self.m_mip.update()
-
-        # 4. Bucle de Eventos (Actor Pattern)
-        while True:
-            cmd, payload = self.in_q.get()
+        try:
+            # 1. Modelo LP (Benders)
+            m_lp_temp = gp.Model(f"Leaf_{self.leaf_idx}_LP_temp", env=self.env)
+            self.leaf_block.build_model(parent_model=m_lp_temp)
+            m_lp_temp.setObjective(self.leaf_block.local_objective_expr, gp.GRB.MAXIMIZE)
+            m_lp_temp.update()
             
-            try:
-                if cmd == "STOP":
-                    self.out_q.put((self.leaf_idx, "STOP_ACK", True))
-                    break
-                    
-                elif cmd == "SOLVE_LP":
-                    for c, val in zip(self.link_constrs_lp, payload):
-                        c.RHS = val
-                        
-                    with self.semaphore:
-                        self.m_lp.optimize()
-
-                    status = self.m_lp.Status
-                    obj_val = 0.0
-                    duals = []
-                    farkas = []
-                    
-                    if status == gp.GRB.OPTIMAL:
-                        obj_val = self.m_lp.ObjVal
-                        duals = [c.Pi for c in self.link_constrs_lp]
-                    elif status == gp.GRB.INF_OR_UNBD or status == gp.GRB.INFEASIBLE:
-                        obj_val = - self.m_lp.FarkasProof
-                        farkas = [c.FarkasDual for c in self.link_constrs_lp]
-                        
-                    self.out_q.put((self.leaf_idx, "LP", (status, obj_val, duals, farkas)))
-                    
-                elif cmd == "SOLVE_MIP":
-                    for c, val in zip(self.link_constrs_mip, payload):
-                        c.RHS = val
-                        
-                    with self.semaphore:
-                        self.m_mip.optimize()
-                   
-                    status = self.m_mip.Status
-                    obj_val = self.m_mip.ObjVal if status == gp.GRB.OPTIMAL else -1e9
-                    self.out_q.put((self.leaf_idx, "MIP", (status, obj_val)))
+            self.m_lp = m_lp_temp.relax()
+            self.m_lp.ModelName = f"Leaf_{self.leaf_idx}_LP"
+            m_lp_temp.dispose()
             
-            except Exception as e:
-                self.out_q.put((self.leaf_idx, "ERROR", None))
-                print(f"LeafWorker {self.leaf_idx} Error: {e}")
+            # Estabilidad de Rayos Farkas
+            self.m_lp.Params.Method = 1  # Forzar Dual Simplex
+            self.m_lp.Params.InfUnbdInfo = 1 
+            self.m_lp.Params.DualReductions = 0 
+            self.m_lp.update()
+            
+            for name in self.var_names:
+                v_in_lp = self.m_lp.getVarByName(name)
+                c = self.m_lp.addConstr(v_in_lp == 0.0, name=f"link_{name}")
+                self.link_constrs_lp.append(c)
+                # Quitar cota superior para que los duales representen el acople correctamente
+                v_in_lp.UB = gp.GRB.INFINITY 
+            self.m_lp.update()
+            
+            # 2. Modelo MIP (Integer L-Shaped)
+            self.m_mip = gp.Model(f"Leaf_{self.leaf_idx}_MIP", env=self.env)
+            self.leaf_block.build_model(parent_model=self.m_mip)
+            self.m_mip.setObjective(self.leaf_block.local_objective_expr, gp.GRB.MAXIMIZE)
+            self.m_mip.update()
+            
+            for name in self.var_names:
+                v_in_mip = self.m_mip.getVarByName(name)
+                c = self.m_mip.addConstr(v_in_mip == 0.0, name=f"link_{name}")
+                self.link_constrs_mip.append(c)
+            self.m_mip.update()
 
-        # Limpieza al terminar
-        self.env.dispose()
+            # 3. Bucle de Eventos (Actor Pattern)
+            while True:
+                cmd, payload = self.in_q.get()
+                
+                try:
+                    if cmd == "STOP":
+                        self.out_q.put((self.leaf_idx, "STOP_ACK", True))
+                        break
+                        
+                    elif cmd == "SOLVE_LP":
+                        for c, val in zip(self.link_constrs_lp, payload):
+                            c.RHS = val
+                            
+                        with self.semaphore:
+                            self.m_lp.optimize()
+    
+                        status = self.m_lp.Status
+                        obj_val = 0.0
+                        duals = []
+                        farkas = []
+                        
+                        if status == gp.GRB.OPTIMAL:
+                            obj_val = self.m_lp.ObjVal
+                            duals = [c.Pi for c in self.link_constrs_lp]
+                        elif status == gp.GRB.INF_OR_UNBD or status == gp.GRB.INFEASIBLE:
+                            obj_val = - self.m_lp.FarkasProof
+                            farkas = [c.FarkasDual for c in self.link_constrs_lp]
+                            
+                        self.out_q.put((self.leaf_idx, "LP", (status, obj_val, duals, farkas)))
+                        
+                    elif cmd == "SOLVE_MIP":
+                        for c, val in zip(self.link_constrs_mip, payload):
+                            c.RHS = val
+                            
+                        with self.semaphore:
+                            self.m_mip.optimize()
+                       
+                        status = self.m_mip.Status
+                        obj_val = self.m_mip.ObjVal if status == gp.GRB.OPTIMAL else -1e9
+                        self.out_q.put((self.leaf_idx, "MIP", (status, obj_val)))
+                except Exception as e:
+                    self.out_q.put((self.leaf_idx, "ERROR", None))
+                    print(f"LeafWorker {self.leaf_idx} Error: {e}")
+        finally:
+            if self.m_lp is not None:
+                self.m_lp.dispose()
+                self.m_lp = None
+            if self.m_mip is not None:
+                self.m_mip.dispose()
+                self.m_mip = None
 
 
 class IntegerLShapedSolver:
@@ -146,6 +144,14 @@ class IntegerLShapedSolver:
             # --- PROPAGACIÓN DE CONFLICTOS ---
             if all(hasattr(b, 'inherit_conflicts') for b in self.blocks):
                 self._propagate_conflicts()
+
+            self.worker_envs = []
+            for _ in range(self.K):
+                env = gp.Env(empty=True)
+                env.setParam("OutputFlag", 0)
+                env.setParam("Threads", self.num_threads)
+                env.start()
+                self.worker_envs.append(env)
                 
             self._prepare_workers()
             self._build_master()
@@ -211,7 +217,7 @@ class IntegerLShapedSolver:
             leaf.local_objective_expr = orig_obj
             
             # 3. Levantar Worker Persistente aislado
-            w = LeafWorker(i, leaf_copy, var_names, self.in_queues[i], self.out_queue, self.semaphore, self.num_threads)
+            w = LeafWorker(i, leaf_copy, var_names, self.worker_envs[i], self.in_queues[i], self.out_queue, self.semaphore)
             w.start()
             self.workers.append(w)
             
@@ -368,7 +374,9 @@ class IntegerLShapedSolver:
                 q.put(("STOP", None))
             for w in self.workers:
                 w.join()
-        
+            for env in self.worker_envs:
+                env.dispose()
+
         metrics = {
             "method": "IntegerLShaped",
             "status": "Unknown",

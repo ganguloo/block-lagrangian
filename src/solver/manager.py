@@ -41,7 +41,15 @@ class CRGManager:
         self.in_queues = [queue.Queue() for _ in range(self.K)]
         self.out_queue = queue.Queue()
         self.workers = []
-            
+        self.worker_envs = []
+
+        for _ in range(self.K):
+            env = gp.Env(empty=True)
+            env.setParam("OutputFlag", 0)
+            env.setParam("Threads", self.num_threads)
+            env.start()
+            self.worker_envs.append(env)
+
         self._prepare_workers()
 
     def _propagate_conflicts(self):
@@ -63,7 +71,7 @@ class CRGManager:
                 block=block_copy, 
                 strategy=self.strategy, 
                 topology=self.topology, 
-                num_threads=self.num_threads, 
+                env=self.worker_envs[i], 
                 in_q=self.in_queues[i], 
                 out_q=self.out_queue, 
                 semaphore=self.semaphore
@@ -361,6 +369,8 @@ class CRGManager:
                 q.put(("STOP", None))
             for w in self.workers:
                 w.join()
+            for env in self.worker_envs:
+                env.dispose()
 
         metrics["total_time"] = time.time() - start_total
         if metrics["dual_bound"] < float('inf') and metrics["primal_bound"] > -float('inf'):
