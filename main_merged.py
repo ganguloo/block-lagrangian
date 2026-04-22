@@ -21,6 +21,7 @@ from src.strategies.v_lagrangian import VLagrangianStrategy
 from src.strategies.exact_m_lagrangian import ExactMLagrangianStrategy
 from src.strategies.reflected_m_lagrangian import ReflectedMLagrangianStrategy
 from src.strategies.generalized_m_lagrangian import GeneralizedMLagrangianStrategy
+from src.strategies.hybrid_m_lagrangian import HybridMLagrangianStrategy
 from src.solver.manager import CRGManager
 from src.monolithic.solver import MonolithicSolver
 from src.solvers.integer_lshaped import IntegerLShapedSolver
@@ -29,22 +30,47 @@ import gurobipy as gp
 from src.blocks.binary_qp import QPBlock
 
 # ==================== CONFIGURATION ====================
-OUTPUT_FILE = "qp.csv"
+
+OUTPUT_FILE = "benchmark_results_f050_n100_m500_b15.csv"
+
 
 INSTANCE_GRID = [
-    # Puedes crear instancias muy dispersas usando un bias negativo:
-    {"problem": "boxqp", "n_blocks": 8, "n_nodes": 60, "n_edges": 600, "coupling": 20, "topo": "random_tree", "bias": 0, "linearize": True},
-    {"problem": "boxqp", "n_blocks": 8, "n_nodes": 60, "n_edges": 600, "coupling": 40, "topo": "random_tree", "bias": 0, "linearize": True},
+    {"problem": "stable_set", "n_blocks": 15, "n_nodes": 100, "n_edges": 500, "coupling": 20, "topo": "star"},
+    {"problem": "stable_set", "n_blocks": 15, "n_nodes": 100, "n_edges": 500, "coupling": 20, "topo": "path"},
+    {"problem": "stable_set", "n_blocks": 15, "n_nodes": 100, "n_edges": 500, "coupling": 20, "topo": "bintree"},
+    {"problem": "dominating_set", "n_blocks": 15, "n_nodes": 100, "n_edges": 500, "coupling": 20, "topo": "star"},
+    {"problem": "dominating_set", "n_blocks": 15, "n_nodes": 100, "n_edges": 500, "coupling": 20, "topo": "path"},
+    {"problem": "dominating_set", "n_blocks": 15, "n_nodes": 100, "n_edges": 500, "coupling": 20, "topo": "bintree"},
+
+
+    {"problem": "stable_set", "n_blocks": 15, "n_nodes": 100, "n_edges": 500, "coupling": 30, "topo": "star"},
+    {"problem": "stable_set", "n_blocks": 15, "n_nodes": 100, "n_edges": 500, "coupling": 30, "topo": "path"},
+    {"problem": "stable_set", "n_blocks": 15, "n_nodes": 100, "n_edges": 500, "coupling": 30, "topo": "bintree"},
+    {"problem": "dominating_set", "n_blocks": 15, "n_nodes": 100, "n_edges": 500, "coupling": 30, "topo": "star"},
+    {"problem": "dominating_set", "n_blocks": 15, "n_nodes": 100, "n_edges": 500, "coupling": 30, "topo": "path"},
+    {"problem": "dominating_set", "n_blocks": 15, "n_nodes": 100, "n_edges": 500, "coupling": 30, "topo": "bintree"},
+
+
+    {"problem": "stable_set", "n_blocks": 15, "n_nodes": 100, "n_edges": 500, "coupling": 40, "topo": "star"},
+    {"problem": "stable_set", "n_blocks": 15, "n_nodes": 100, "n_edges": 500, "coupling": 40, "topo": "path"},
+    {"problem": "stable_set", "n_blocks": 15, "n_nodes": 100, "n_edges": 500, "coupling": 40, "topo": "bintree"},
+    {"problem": "dominating_set", "n_blocks": 15, "n_nodes": 100, "n_edges": 500, "coupling": 40, "topo": "star"},
+    {"problem": "dominating_set", "n_blocks": 15, "n_nodes": 100, "n_edges": 500, "coupling": 40, "topo": "path"},
+    {"problem": "dominating_set", "n_blocks": 15, "n_nodes": 100, "n_edges": 500, "coupling": 40, "topo": "bintree"},
+
+    #{"problem": "boxqp", "n_blocks": 8, "n_nodes": 60, "n_edges": 600, "coupling": 20, "topo": "random_tree", "bias": 0, "linearize": True},
+    #{"problem": "boxqp", "n_blocks": 8, "n_nodes": 60, "n_edges": 600, "coupling": 40, "topo": "random_tree", "bias": 0, "linearize": True},
 ]
 
-SEEDS = [i for i in range(2)]
+SEEDS = [i for i in range(1)]
 
 SOLVER_CONFIGS = [
-    {"name": "Monolithic", "type": "mono", "time_limit": 1800},
-    {"name": "CRG_VLag_f060", "type": "crg", "class": VLagrangianStrategy, "args": {"factor":0.6}, "time_limit": 1800},
-    {"name": "CRG_ExactMLag_f030", "type": "crg", "class": ExactMLagrangianStrategy, "args": {"factor":0.3}, "time_limit": 1800},
-    {"name": "CRG_ReflectMLag_f030", "type": "crg", "class": ReflectedMLagrangianStrategy, "args": {"factor":0.3}, "time_limit": 1800},
-    {"name": "CRG_GeneralMLag_f030", "type": "crg", "class": GeneralizedMLagrangianStrategy, "args": {"factor":0.3}, "time_limit": 1800},
+    #{"name": "Monolithic", "type": "mono", "time_limit": 1800},
+    #{"name": "CRG_VLag_f100", "type": "crg", "class": VLagrangianStrategy, "args": {"factor":1.0}, "time_limit": 1800},
+    #{"name": "CRG_ExactMLag_f050", "type": "crg", "class": ExactMLagrangianStrategy, "args": {"factor":0.5}, "time_limit": 1800},
+    {"name": "CRG_HybridMLag_f100_f050_outer5", "type": "crg", "class": HybridMLagrangianStrategy, "args": {"max_outer_iters":5}, "time_limit": 1800},
+    #{"name": "CRG_ReflectMLag_f030", "type": "crg", "class": ReflectedMLagrangianStrategy, "args": {"factor":0.3}, "time_limit": 1800},
+    #{"name": "CRG_GeneralMLag_f030", "type": "crg", "class": GeneralizedMLagrangianStrategy, "args": {"factor":0.3}, "time_limit": 1800},
     #{"name": "IntegerLShaped", "type": "lshaped", "time_limit": 1800},
     #{"name": "ScenarioDecomp", "type": "scenario", "time_limit": 1800},
 ]

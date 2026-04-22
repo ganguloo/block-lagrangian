@@ -351,6 +351,13 @@ class CRGManager:
 
                 print(f"Fin Outer {metrics['iter_outer']}: Obj {metrics['dual_bound']:.4f}, Cuts +{cuts_added_iter}")
 
+                if hasattr(self.strategy, 'update_state'):
+                    self.strategy.update_state(
+                        current_iter=metrics['iter_outer'], 
+                        current_time=time.time() - start_total, 
+                        total_cuts=metrics['cuts_added']
+                    )
+
                 if cuts_added_iter == 0 and inner_cols == 0:
                     metrics["status"] = "Converged"
                     break
