@@ -259,7 +259,7 @@ def run_single_experiment(inst_conf, seed, solver_conf, parallel, workers, threa
                         "total_time": res["total_time"],
                         "primal_bound": res["primal_bound"],
                         "dual_bound": res["dual_bound"],
-                        "gap": res["gap"],
+                        "gap": res["gap"] * 100,
                         "root_lp": res["root_lp_val"],
                         "root_lp_presolved": res["root_lp_presolved_val"],
                         "node_count": res["node_count"]
@@ -277,7 +277,7 @@ def run_single_experiment(inst_conf, seed, solver_conf, parallel, workers, threa
                         "total_time": res["total_time"],
                         "primal_bound": res["primal_bound"],
                         "dual_bound": res["dual_bound"],
-                        "gap": res["gap"],
+                        "gap": res["gap"] * 100,
                         "root_lp": res["root_lp_val"],
                         "iter_outer": res["iter_outer"],
                         "iter_inner": res["iter_total_inner"],
@@ -307,7 +307,7 @@ def run_single_experiment(inst_conf, seed, solver_conf, parallel, workers, threa
                         "total_time": res["total_time"],
                         "primal_bound": res["primal_bound"],
                         "dual_bound": res["dual_bound"],
-                        "gap": res["gap"],
+                        "gap": res["gap"] * 100,
                         "node_count": res["node_count"]
                     })
 
@@ -319,7 +319,7 @@ def run_single_experiment(inst_conf, seed, solver_conf, parallel, workers, threa
                         "total_time": res["total_time"],
                         "primal_bound": res["primal_bound"],
                         "dual_bound": res["dual_bound"],
-                        "gap": res["gap"],
+                        "gap": res["gap"] * 100,
                         "iter_outer": res["iter"]
                     })
 
