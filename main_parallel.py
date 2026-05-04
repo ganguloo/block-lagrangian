@@ -36,7 +36,7 @@ INSTANCE_GRID = [
     {"problem": "stable_set", "n_blocks": 15, "n_nodes": 100, "n_edges": 500, "coupling": 30, "topo": "bintree", "stochastic": True},
     {"problem": "stable_set", "n_blocks": 15, "n_nodes": 100, "n_edges": 500, "coupling": 40, "topo": "star", "stochastic": True},
     {"problem": "stable_set", "n_blocks": 15, "n_nodes": 100, "n_edges": 500, "coupling": 40, "topo": "bintree", "stochastic": True},
-    
+
     {"problem": "dominating_set", "n_blocks": 15, "n_nodes": 100, "n_edges": 500, "coupling": 20, "topo": "star", "stochastic": True},
     {"problem": "dominating_set", "n_blocks": 15, "n_nodes": 100, "n_edges": 500, "coupling": 20, "topo": "bintree", "stochastic": True},
     {"problem": "dominating_set", "n_blocks": 15, "n_nodes": 100, "n_edges": 500, "coupling": 30, "topo": "star", "stochastic": True},
@@ -83,7 +83,7 @@ def worker_task(inst_conf, seed, solver_conf):
     """
     Función que ejecuta un job individual de forma completamente aislada y secuencial.
     """
-   
+
     problem_type = inst_conf["problem"]
     n_blocks = inst_conf["n_blocks"]
     n_nodes = inst_conf["n_nodes"]
@@ -131,9 +131,9 @@ def worker_task(inst_conf, seed, solver_conf):
                 b = StableSetBlock(i, n_nodes, num_edges=n_edges, seed=seed+i, obj_factor=obj_factor)
             elif problem_type == "matching":
                 b = MatchingBlock(i, n_nodes, num_edges=n_edges, seed=seed+i, probability=obj_factor)
-            elif problem_type == "dominating_set":  
+            elif problem_type == "dominating_set":
                 b = DominatingSetBlock(i, n_nodes, num_edges=n_edges, seed=seed+i, obj_factor=obj_factor)
-            
+
             blocks.append(b)
             # En matching el tamaño de bloque es num_edges, en los otros num_nodes
             block_sizes.append(b.num_edges if problem_type == "matching" else n_nodes)
@@ -149,7 +149,7 @@ def worker_task(inst_conf, seed, solver_conf):
 
         # Ejecución del Solver
         if solver_conf["type"] == "mono":
-            solver = MonolithicSolver(topology, blocks, single_threaded=True) 
+            solver = MonolithicSolver(topology, blocks, threads=1)
             res = solver.build_and_solve(time_limit=solver_conf["time_limit"])
             row.update({
                 "status": res["status"],
@@ -165,13 +165,13 @@ def worker_task(inst_conf, seed, solver_conf):
         elif solver_conf["type"] == "crg":
             # 1. Copiamos los args originales para no mutar el diccionario global
             strategy_args = solver_conf.get("args", {}).copy()
-            # 2. Inyectamos single_threaded a la estrategia
-            strategy_args["single_threaded"] = True 
-            
+            # 2. Ejecutamos cada job de main_parallel con un subproblema simultáneo y un hilo de Gurobi.
+            strategy_args["threads"] = 1
+
             strategy = solver_conf["class"](**strategy_args)
-            
-            # 3. Pasamos single_threaded=True al Manager
-            manager = CRGManager(blocks, topology, strategy, single_threaded=True) 
+
+            # 3. Pasamos num_workers=1, threads=1 al Manager
+            manager = CRGManager(blocks, topology, strategy, num_workers=1, threads=1)
             res = manager.run(time_limit=solver_conf["time_limit"])
             row.update({
                 "status": res["status"],
@@ -189,7 +189,7 @@ def worker_task(inst_conf, seed, solver_conf):
             })
 
         elif solver_conf["type"] == "lshaped":
-            solver = IntegerLShapedSolver(topology, blocks, single_threaded=True)
+            solver = IntegerLShapedSolver(topology, blocks, num_workers=1, threads=1)
             res = solver.solve(time_limit=solver_conf["time_limit"])
             row.update({
                 "status": res["status"],
@@ -201,7 +201,7 @@ def worker_task(inst_conf, seed, solver_conf):
             })
 
         elif solver_conf["type"] == "scenario":
-            solver = ScenarioDecompositionSolver(topology, blocks, single_threaded=True)
+            solver = ScenarioDecompositionSolver(topology, blocks, num_workers=1, threads=1)
             res = solver.solve(time_limit=solver_conf["time_limit"])
             row.update({
                 "status": res["status"],
@@ -222,7 +222,7 @@ def worker_task(inst_conf, seed, solver_conf):
     # Limpieza de memoria
     del blocks, topology
     gc.collect()
-    
+
     return row
 
 def main():
@@ -233,10 +233,10 @@ def main():
     print(f"Starting PARALLEL Benchmark Suite on {platform.node()} with {args.workers} workers", flush=True)
 
     completed_runs = get_completed_runs()
-    
+
     # 1. Recopilar todas las tareas pendientes
     pending_tasks = []
-    
+
     for inst_conf in INSTANCE_GRID:
         for seed in SEEDS:
             problem_type = inst_conf["problem"]
@@ -260,7 +260,7 @@ def main():
 
                 if (solver_conf["type"] == "lshaped" or solver_conf["type"] == "scenario") and topo_type != "star":
                     continue
-                
+
                 # Guardamos la tupla de argumentos para el worker
                 pending_tasks.append((inst_conf, seed, solver_conf))
 
@@ -289,7 +289,7 @@ def main():
         with concurrent.futures.ProcessPoolExecutor(max_workers=args.workers) as executor:
             # Enviamos todas las tareas al executor
             future_to_task = {
-                executor.submit(worker_task, task[0], task[1], task[2]): task 
+                executor.submit(worker_task, task[0], task[1], task[2]): task
                 for task in pending_tasks
             }
 
@@ -297,19 +297,19 @@ def main():
             for future in concurrent.futures.as_completed(future_to_task):
                 task_args = future_to_task[future]
                 inst_info, seed_info, solver_info = task_args
-                
+
                 try:
                     row_result = future.result()
-                    
+
                     # Escribir inmediatamente para poder reanudar si se cancela
                     writer.writerow(row_result)
                     f.flush()
-                    
+
                     completed_count += 1
                     status = row_result.get('status', 'Unknown')
                     time_taken = row_result.get('total_time', 0)
                     print(f"[{completed_count}/{len(pending_tasks)}] DONE: {solver_info['name']} | Seed {seed_info} | {inst_info['topo']} -> Status: {status} ({time_taken:.1f}s)", flush=True)
-                    
+
                 except Exception as exc:
                     print(f"Task generated an exception: {exc}", flush=True)
 

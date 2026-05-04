@@ -5,14 +5,13 @@ from ..instance.topology import TopologyManager
 from ..blocks.base_block import AbstractBlock
 
 class MonolithicSolver:
-    def __init__(self, topology: TopologyManager, blocks: List[AbstractBlock], single_threaded: bool = False):
+    def __init__(self, topology: TopologyManager, blocks: List[AbstractBlock], threads: int = 1):
         self.topology = topology
         self.blocks = blocks
+        self.threads = max(1, int(threads))
         self.model = gp.Model("MonolithicProblem")
-        self.model.Params.OutputFlag = 1 
-
-        if single_threaded:
-            self.model.Params.Threads = 1
+        self.model.Params.OutputFlag = 1
+        self.model.Params.Threads = self.threads
 
     def build_and_solve(self, time_limit=None, work_limit=None) -> Dict[str, Any]:
         total_obj = gp.QuadExpr()
@@ -50,11 +49,15 @@ class MonolithicSolver:
         # Intentar obtener cota de la relajación lineal
         try:
             m_copy = self.model.copy()
+            m_copy.Params.Threads = self.threads
             m_relax = m_copy.relax()
             m_relax.Params.OutputFlag = 0
+            m_relax.Params.Threads = self.threads
             m_relax.optimize()
             if m_relax.Status == gp.GRB.OPTIMAL:
                 metrics["root_lp_val"] = m_relax.ObjVal
+            m_relax.dispose()
+            m_copy.dispose()
         except: pass
 
         try:
@@ -62,11 +65,15 @@ class MonolithicSolver:
             m_pre = self.model.presolve()
             self.model.Params.OutputFlag = 1 # Volver a encender
             if m_pre:
+                m_pre.Params.Threads = self.threads
                 m_pre_relax = m_pre.relax()
                 m_pre_relax.Params.OutputFlag = 0
+                m_pre_relax.Params.Threads = self.threads
                 m_pre_relax.optimize()
                 if m_pre_relax.Status == gp.GRB.OPTIMAL:
                     metrics["root_lp_presolved_val"] = m_pre_relax.ObjVal
+                m_pre_relax.dispose()
+                m_pre.dispose()
         except: pass
 
         if time_limit:

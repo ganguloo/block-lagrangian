@@ -6,18 +6,18 @@ from .v_lagrangian import VLagrangianStrategy
 
 class HybridMLagrangianStrategy(SeparationStrategy):
     def __init__(self, 
-                 exact_tolerance: float = 1e-6, exact_factor: float = 0.5,
-                 vlag_radius_factor: float = 0.0, vlag_tolerance: float = 1e-6, vlag_factor: float = 1.0,
+                 m_tolerance: float = 1e-6, m_factor: float = 0.5,
+                 vlag_radius_factor: float = 0.0, v_tolerance: float = 1e-6, v_factor: float = 1.0,
                  max_outer_iters: int = None, 
                  max_time: float = None, 
                  max_cuts: int = None,
-                 single_threaded: bool = False):
+                 threads: int = 1):
         
-        super().__init__(single_threaded=single_threaded)
+        super().__init__(threads=threads)
         
         # Instanciar las dos estrategias subyacentes
-        self.exact_strategy = ExactMLagrangianStrategy(tolerance=exact_tolerance, factor=exact_factor, single_threaded=single_threaded)
-        self.vlag_strategy = VLagrangianStrategy(radius_factor=vlag_radius_factor, tolerance=vlag_tolerance, factor=vlag_factor, single_threaded=single_threaded)
+        self.exact_strategy = ExactMLagrangianStrategy(tolerance=m_tolerance, factor=m_factor, threads=threads)
+        self.vlag_strategy = VLagrangianStrategy(radius_factor=vlag_radius_factor, tolerance=v_tolerance, factor=v_factor, threads=threads)
         
         # Límites de transición (None significa que no aplica)
         self.max_outer_iters = max_outer_iters

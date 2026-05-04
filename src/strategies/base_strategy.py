@@ -3,8 +3,8 @@ from typing import List, Dict, Tuple, Any
 import gurobipy as gp
 
 class SeparationStrategy(ABC):
-    def __init__(self, single_threaded: bool = False):
-        self.single_threaded = single_threaded
+    def __init__(self, threads: int = 1):
+        self.threads = max(1, int(threads))
 
     def get_w_signature(self, x_values: List[int]) -> Tuple[int, ...]:
         """

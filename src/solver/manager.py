@@ -12,21 +12,15 @@ from ..solver.pricing import PricingWorker
 from ..monolithic.solver import MonolithicSolver
 
 class CRGManager:
-    def __init__(self, blocks, topology, strategy, single_threaded: bool = False):
+    def __init__(self, blocks, topology, strategy, num_workers: int = 1, threads: int = 1):
         self.blocks = blocks
         self.topology = topology
         self.strategy = strategy
-        self.single_threaded = single_threaded
+        self.num_workers = max(1, min(int(num_workers), len(self.blocks)))
+        self.num_threads = max(1, int(threads))
 
-        self.master = MasterProblem(len(blocks))
+        self.master = MasterProblem(len(blocks), threads=self.num_threads)
         self.master.register_linear_constraints(topology)
-        
-        if self.single_threaded:
-            self.num_workers = 1
-            self.num_threads = 1
-        else:
-            self.num_workers = min(len(self.blocks), 16)
-            self.num_threads = max(1, math.floor(32 / self.num_workers))
         
         self.semaphore = threading.Semaphore(self.num_workers)
         self.cut_registry = {}
@@ -74,14 +68,15 @@ class CRGManager:
                 env=self.worker_envs[i], 
                 in_q=self.in_queues[i], 
                 out_q=self.out_queue, 
-                semaphore=self.semaphore
+                semaphore=self.semaphore,
+                threads=self.num_threads
             )
             w.start()
             self.workers.append(w)
 
     def _initialize_from_monolithic(self):
         print("Inicializando con Monolítico (10w)...")
-        mono = MonolithicSolver(self.topology, self.blocks)
+        mono = MonolithicSolver(self.topology, self.blocks, threads=self.num_workers * self.num_threads)
         mono.model.Params.OutputFlag = 0
         try:
             mono.build_and_solve(work_limit=10)
@@ -115,8 +110,10 @@ class CRGManager:
         print("[Init] Resolviendo relajación lineal monolítica para cota dual inicial...")
         try:
             m_copy = mono.model.copy()
+            m_copy.Params.Threads = self.num_workers * self.num_threads
             m_relax = m_copy.relax()
             m_relax.Params.OutputFlag = 0
+            m_relax.Params.Threads = self.num_workers * self.num_threads
             m_relax.optimize()
             if m_relax.Status == gp.GRB.OPTIMAL:
                 self.initial_dual_bound = m_relax.ObjVal
@@ -140,6 +137,7 @@ class CRGManager:
         try:
             m_heur = self.master.model.copy()
             m_heur.Params.OutputFlag = 0
+            m_heur.Params.Threads = self.num_threads
             m_heur.Params.TimeLimit = 5
             for v in m_heur.getVars():
                 v.VType = gp.GRB.BINARY

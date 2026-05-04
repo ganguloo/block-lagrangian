@@ -1,5 +1,4 @@
 import time
-import math # <--- NUEVO
 import gurobipy as gp
 import threading
 import queue
@@ -9,7 +8,7 @@ from ..blocks.base_block import AbstractBlock
 from ..instance.topology import TopologyManager
 
 class LeafWorker(threading.Thread):
-    def __init__(self, leaf_idx, leaf_block_copy, var_names, env, in_q, out_q, semaphore):
+    def __init__(self, leaf_idx, leaf_block_copy, var_names, env, in_q, out_q, semaphore, threads: int = 1):
         super().__init__()
         self.leaf_idx = leaf_idx
         self.leaf_block = leaf_block_copy
@@ -18,6 +17,7 @@ class LeafWorker(threading.Thread):
         self.in_q = in_q
         self.out_q = out_q
         self.semaphore = semaphore
+        self.num_threads = max(1, int(threads))
 
         self.m_lp = None
         self.m_mip = None
@@ -28,12 +28,14 @@ class LeafWorker(threading.Thread):
         try:
             # 1. Modelo LP (Benders)
             m_lp_temp = gp.Model(f"Leaf_{self.leaf_idx}_LP_temp", env=self.env)
+            m_lp_temp.Params.Threads = self.num_threads
             self.leaf_block.build_model(parent_model=m_lp_temp)
             m_lp_temp.setObjective(self.leaf_block.local_objective_expr, gp.GRB.MAXIMIZE)
             m_lp_temp.update()
             
             self.m_lp = m_lp_temp.relax()
             self.m_lp.ModelName = f"Leaf_{self.leaf_idx}_LP"
+            self.m_lp.Params.Threads = self.num_threads
             m_lp_temp.dispose()
             
             # Estabilidad de Rayos Farkas
@@ -52,6 +54,7 @@ class LeafWorker(threading.Thread):
             
             # 2. Modelo MIP (Integer L-Shaped)
             self.m_mip = gp.Model(f"Leaf_{self.leaf_idx}_MIP", env=self.env)
+            self.m_mip.Params.Threads = self.num_threads
             self.leaf_block.build_model(parent_model=self.m_mip)
             self.m_mip.setObjective(self.leaf_block.local_objective_expr, gp.GRB.MAXIMIZE)
             self.m_mip.update()
@@ -115,7 +118,7 @@ class LeafWorker(threading.Thread):
 
 
 class IntegerLShapedSolver:
-    def __init__(self, topology: TopologyManager, blocks: List[AbstractBlock], single_threaded: bool = False):
+    def __init__(self, topology: TopologyManager, blocks: List[AbstractBlock], num_workers: int = 1, threads: int = 1):
             self.topology = topology
             self.blocks = blocks          
             self.center_block = blocks[0]
@@ -129,17 +132,10 @@ class IntegerLShapedSolver:
             self.in_queues = [queue.Queue() for _ in range(self.K)]
             self.out_queue = queue.Queue()
             self.workers = []
-            self.single_threaded = single_threaded
-            
-            # --- AJUSTE DINÁMICO DE HILOS Y WORKERS ---
-            if self.single_threaded:
-                self.num_workers = 1
-                self.num_threads = 1
-            else:
-                self.num_workers = min(len(self.blocks), 16)
-                self.num_threads = max(1, math.floor(32 / self.num_workers))
+            self.num_workers = max(1, min(int(num_workers), max(1, self.K)))
+            self.num_threads = max(1, int(threads))
                 
-            self.semaphore = threading.Semaphore(self.num_workers) # <--- ASIGNACIÓN DINÁMICA
+            self.semaphore = threading.Semaphore(self.num_workers)
 
             # --- PROPAGACIÓN DE CONFLICTOS ---
             if all(hasattr(b, 'inherit_conflicts') for b in self.blocks):
@@ -180,6 +176,7 @@ class IntegerLShapedSolver:
             # 1. Cota superior precalculada sincrónicamente
             m_temp = gp.Model()
             m_temp.Params.OutputFlag = 0
+            m_temp.Params.Threads = self.num_threads
             leaf.build_model(parent_model=m_temp)
             m_temp.update()
             
@@ -192,6 +189,8 @@ class IntegerLShapedSolver:
             m_temp.setObjective(leaf.local_objective_expr, gp.GRB.MAXIMIZE)
             m_temp.update() # <-- CRÍTICO
             m_relax = m_temp.relax()
+            m_relax.Params.OutputFlag = 0
+            m_relax.Params.Threads = self.num_threads
             m_relax.optimize()
             if m_relax.Status == gp.GRB.OPTIMAL:
                 total_max_possible += m_relax.ObjVal
@@ -217,7 +216,7 @@ class IntegerLShapedSolver:
             leaf.local_objective_expr = orig_obj
             
             # 3. Levantar Worker Persistente aislado
-            w = LeafWorker(i, leaf_copy, var_names, self.worker_envs[i], self.in_queues[i], self.out_queue, self.semaphore)
+            w = LeafWorker(i, leaf_copy, var_names, self.worker_envs[i], self.in_queues[i], self.out_queue, self.semaphore, self.num_threads)
             w.start()
             self.workers.append(w)
             
@@ -228,6 +227,7 @@ class IntegerLShapedSolver:
     def _build_master(self):
         self.master = gp.Model("Master_LShaped")
         self.master.Params.OutputFlag = 1
+        self.master.Params.Threads = self.num_threads
         self.master.Params.LazyConstraints = 1
         
         self.center_block.build_model(parent_model=self.master)

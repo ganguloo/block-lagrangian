@@ -3,8 +3,8 @@ from typing import List, Dict, Tuple, Any
 from .base_strategy import SeparationStrategy
 
 class ReflectedMLagrangianStrategy(SeparationStrategy):
-    def __init__(self, tolerance: float = 1e-6, factor: float = 0.5, single_threaded: bool = False):
-        super().__init__(single_threaded=single_threaded)
+    def __init__(self, tolerance: float = 1e-6, factor: float = 0.5, threads: int = 1):
+        super().__init__(threads=threads)
         self.tolerance = tolerance
         self.factor = factor
 
@@ -38,8 +38,7 @@ class ReflectedMLagrangianStrategy(SeparationStrategy):
         m.Params.PoolSearchMode = 2 
         m.Params.PoolSolutions = int(round(self.factor * n_vars))
 
-        if self.single_threaded:
-            m.Params.Threads = 1
+        m.Params.Threads = self.threads
         
         z = m.addVars(n_vars, vtype=gp.GRB.BINARY, name="z")
         w_pos = m.addVars(len(pos_sigs), vtype=gp.GRB.BINARY, name="w_pos")

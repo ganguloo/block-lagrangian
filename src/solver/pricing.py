@@ -4,7 +4,7 @@ import threading
 from typing import Dict, Tuple, List, Any
 
 class PricingWorker(threading.Thread):
-    def __init__(self, p_idx, block, strategy, topology, env, in_q, out_q, semaphore):
+    def __init__(self, p_idx, block, strategy, topology, env, in_q, out_q, semaphore, threads: int = 1):
         super().__init__()
         self.p_idx = p_idx
         self.block = block
@@ -14,6 +14,7 @@ class PricingWorker(threading.Thread):
         self.in_q = in_q
         self.out_q = out_q
         self.semaphore = semaphore
+        self.num_threads = max(1, int(threads))
 
         self.model = None
         self.boundary_vars = {}
@@ -21,6 +22,7 @@ class PricingWorker(threading.Thread):
     def run(self):
         try:
             self.model = gp.Model(self.block.name, env=self.env)
+            self.model.Params.Threads = self.num_threads
             self.model.Params.NonConvex = 2
             
             self.block.build_model(parent_model=self.model)

@@ -1,5 +1,5 @@
 import time
-import math # <--- NUEVO
+import math
 import gurobipy as gp
 import threading
 import queue
@@ -10,7 +10,7 @@ from ..instance.topology import TopologyManager
 from datetime import datetime
 
 class ScenarioWorker(threading.Thread):
-    def __init__(self, k, topology, center_block_copy, leaf_block, K, rho, boundary_indices, env, in_q, out_q, semaphore):
+    def __init__(self, k, topology, center_block_copy, leaf_block, K, rho, boundary_indices, env, in_q, out_q, semaphore, threads: int = 1):
         super().__init__()
         self.k = k
         self.topology = topology
@@ -23,6 +23,7 @@ class ScenarioWorker(threading.Thread):
         self.in_q = in_q
         self.out_q = out_q
         self.semaphore = semaphore
+        self.num_threads = max(1, int(threads))
 
         self.model = None
         self.scenario_center_var_names = {}
@@ -30,6 +31,7 @@ class ScenarioWorker(threading.Thread):
     def run(self):
         try:
             self.model = gp.Model(f"Scenario_{self.k}", env=self.env)
+            self.model.Params.Threads = self.num_threads
 
             # 2. Build Blocks
             self.center_block.build_model(parent_model=self.model, prefix="C")
@@ -74,6 +76,7 @@ class ScenarioWorker(threading.Thread):
                         try:
                             r_model = self.model.relax()
                             r_model.Params.OutputFlag = 0
+                            r_model.Params.Threads = self.num_threads
                             with self.semaphore:
                                 r_model.optimize()
                             res = {}
@@ -167,24 +170,17 @@ class ScenarioWorker(threading.Thread):
                 self.model = None
 
 class ScenarioDecompositionSolver:
-    def __init__(self, topology: TopologyManager, blocks: List[AbstractBlock], rho: float = 1.0, single_threaded: bool = False):
+    def __init__(self, topology: TopologyManager, blocks: List[AbstractBlock], rho: float = 1.0, num_workers: int = 1, threads: int = 1):
         self.topology = topology
         self.blocks = blocks          
         self.center_block = blocks[0]
         self.leaf_blocks = blocks[1:]
         self.K = len(self.leaf_blocks)
         self.rho = rho
-        self.single_threaded = single_threaded
-
-        # --- AJUSTE DINÁMICO DE HILOS Y WORKERS ---
-        if self.single_threaded:
-            self.num_workers = 1
-            self.num_threads = 1
-        else:
-            self.num_workers = min(len(self.blocks), 16)
-            self.num_threads = max(1, math.floor(32 / self.num_workers))
+        self.num_workers = max(1, min(int(num_workers), max(1, self.K)))
+        self.num_threads = max(1, int(threads))
             
-        self.semaphore = threading.Semaphore(self.num_workers) # <--- ASIGNACIÓN DINÁMICA
+        self.semaphore = threading.Semaphore(self.num_workers)
         
         # --- 2. PROPAGACIÓN DE CONFLICTOS ---
         # Se ejecuta antes de crear cualquier worker o modelo de Gurobi
@@ -214,7 +210,7 @@ class ScenarioDecompositionSolver:
             w = ScenarioWorker(
                 k, self.topology, center_copy, leaf, self.K, self.rho, 
                 self.sorted_boundary_indices, self.worker_envs[k], self.in_queues[k], self.out_queue,
-                self.semaphore
+                self.semaphore, self.num_threads
             )
             w.start()
             self.workers.append(w)

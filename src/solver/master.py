@@ -3,9 +3,11 @@ import gurobipy as gp
 from typing import Dict, Tuple, Any, Set
 
 class MasterProblem:
-    def __init__(self, num_blocks: int):
+    def __init__(self, num_blocks: int, threads: int = 1):
+        self.threads = max(1, int(threads))
         self.model = gp.Model("RMP")
         self.model.Params.OutputFlag = 0
+        self.model.Params.Threads = self.threads
         self.num_blocks = num_blocks
         self.lambda_vars: Dict[int, Dict[Tuple, gp.Var]] = {i: {} for i in range(num_blocks)}
         self.column_registry: Dict[int, Set[int]] = {i: set() for i in range(num_blocks)}
