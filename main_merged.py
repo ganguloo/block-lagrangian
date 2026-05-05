@@ -267,7 +267,7 @@ def run_single_experiment(inst_conf, seed, solver_conf, parallel, workers, threa
 
                 elif solver_conf["type"] == "crg":
                     strategy_args = solver_conf.get("args", {}).copy()
-                    strategy_args["threads"] = threads
+                    strategy_args["threads"] = workers * threads
                     strategy = solver_conf["class"](**strategy_args)
 
                     manager = CRGManager(blocks, topology, strategy, num_workers=workers, threads=threads)
