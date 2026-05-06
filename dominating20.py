@@ -36,7 +36,7 @@ OUTPUT_FILE = "dominating20.csv"
 
 
 INSTANCE_GRID = [
-    {"problem": "dominating_set", "n_blocks": 15, "n_nodes": 100, "n_edges": 500, "coupling": 20, "topo": "star"},
+#    {"problem": "dominating_set", "n_blocks": 15, "n_nodes": 100, "n_edges": 500, "coupling": 20, "topo": "star"},
     {"problem": "dominating_set", "n_blocks": 15, "n_nodes": 100, "n_edges": 500, "coupling": 20, "topo": "path"},
     {"problem": "dominating_set", "n_blocks": 15, "n_nodes": 100, "n_edges": 500, "coupling": 20, "topo": "bintree"},
     {"problem": "dominating_set", "n_blocks": 15, "n_nodes": 100, "n_edges": 500, "coupling": 20, "topo": "random_tree"},
