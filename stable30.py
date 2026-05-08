@@ -211,7 +211,7 @@ def run_single_experiment(inst_conf, seed, solver_conf, parallel, workers, threa
 
                 # ----- EJECUCIÓN DEL SOLVER -----
                 if solver_conf["type"] == "mono":
-                    solver = MonolithicSolver(topology, blocks, threads=workers * threads)
+                    solver = MonolithicSolver(topology, blocks, threads=workers * threads, max_mem=solver_conf.get("max_mem"))
                     solver.model.Params.OutputFlag = 1
                     solver.model.Params.LogToConsole = 0
 

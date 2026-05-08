@@ -5,13 +5,14 @@ from ..instance.topology import TopologyManager
 from ..blocks.base_block import AbstractBlock
 
 class MonolithicSolver:
-    def __init__(self, topology: TopologyManager, blocks: List[AbstractBlock], threads: int = 1):
+    def __init__(self, topology: TopologyManager, blocks: List[AbstractBlock], threads: int = 1, max_mem = None):
         self.topology = topology
         self.blocks = blocks
         self.threads = max(1, int(threads))
         self.model = gp.Model("MonolithicProblem")
         self.model.Params.OutputFlag = 1
         self.model.Params.Threads = self.threads
+        self.max_mem = max_mem
 
     def build_and_solve(self, time_limit=None, work_limit=None) -> Dict[str, Any]:
         total_obj = gp.QuadExpr()
@@ -80,6 +81,8 @@ class MonolithicSolver:
             self.model.Params.TimeLimit = time_limit
         if work_limit:
             self.model.Params.WorkLimit = work_limit
+        if self.max_mem is not None:
+            self.model.Params.SoftMemLimit = self.max_mem
         
         start_t = time.time()
         self.model.optimize()
@@ -95,7 +98,10 @@ class MonolithicSolver:
         
         if self.model.Status == gp.GRB.OPTIMAL: metrics["status"] = "Optimal"
         elif self.model.Status == gp.GRB.TIME_LIMIT: metrics["status"] = "TimeLimit"
+        elif self.model.Status == gp.GRB.MEM_LIMIT: metrics["status"] = "MemoryLimit"
         else: metrics["status"] = f"Code_{self.model.Status}"
+
+        self.model.dispose()
 
         return metrics
 

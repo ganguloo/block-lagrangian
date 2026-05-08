@@ -36,7 +36,7 @@ OUTPUT_FILE = "dominating20.csv"
 
 
 INSTANCE_GRID = [
-#    {"problem": "dominating_set", "n_blocks": 15, "n_nodes": 100, "n_edges": 500, "coupling": 20, "topo": "star"},
+    {"problem": "dominating_set", "n_blocks": 15, "n_nodes": 100, "n_edges": 500, "coupling": 20, "topo": "star"},
     {"problem": "dominating_set", "n_blocks": 15, "n_nodes": 100, "n_edges": 500, "coupling": 20, "topo": "path"},
     {"problem": "dominating_set", "n_blocks": 15, "n_nodes": 100, "n_edges": 500, "coupling": 20, "topo": "bintree"},
     {"problem": "dominating_set", "n_blocks": 15, "n_nodes": 100, "n_edges": 500, "coupling": 20, "topo": "random_tree"},
@@ -47,7 +47,7 @@ INSTANCE_GRID = [
 SEEDS = [i for i in range(5)]
 
 SOLVER_CONFIGS = [
-    {"name": "Monolithic", "type": "mono", "time_limit": 1800},
+#    {"name": "Monolithic", "type": "mono", "time_limit": 1800},
     {"name": "CRG_VLag_f100", "type": "crg", "class": VLagrangianStrategy, "args": {"factor":1.0}, "time_limit": 1800},
     {"name": "CRG_ExactMLag_f050", "type": "crg", "class": ExactMLagrangianStrategy, "args": {"factor":0.5}, "time_limit": 1800},
     {"name": "CRG_HybridMLag_f100_f050_outer5", "type": "crg", "class": HybridMLagrangianStrategy, "args": {"v_factor":1.0, "m_factor":0.5, "max_outer_iters":5}, "time_limit": 1800},
@@ -211,7 +211,7 @@ def run_single_experiment(inst_conf, seed, solver_conf, parallel, workers, threa
 
                 # ----- EJECUCIÓN DEL SOLVER -----
                 if solver_conf["type"] == "mono":
-                    solver = MonolithicSolver(topology, blocks, threads=workers * threads)
+                    solver = MonolithicSolver(topology, blocks, threads=workers * threads, max_mem=solver_conf.get("max_mem"))
                     solver.model.Params.OutputFlag = 1
                     solver.model.Params.LogToConsole = 0
 
